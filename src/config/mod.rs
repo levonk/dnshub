@@ -1,18 +1,97 @@
-//! Serde structs for `dnshub.toml`.
+//! Serde structs and loaders for `dnshub.toml` and `blocklists.toml`.
 //!
-//! This story (01-001) defines the configuration shape used by the DNS server,
-//! cache, and upstream forwarding sections. Full TOML loading with validation
-//! arrives in story 01-004; here we provide the data model and a helper to
-//! build a default config for the server scaffold.
+//! Story 01-001 defined the configuration shape used by the DNS server,
+//! cache, and upstream forwarding sections. Story 01-004 (this story) adds
+//! full TOML loading with validation, the remaining config sections from
+//! PRD section 4.10, and `blocklists.toml` support.
 //!
 //! The shape mirrors the `dnshub.toml` example in PRD section 4
-//! (lines 1374-1478): `[server]`, `[server.tls]`, `[server.doh]`, `[cache]`,
-//! `[[upstreams]]`, plus the reserved sections for later stories
-//! (`[dhcp]`, `[rate_limit]`, `[ecs]`, `[query_log]`, `[metrics]`,
-//! `[logging]`, `[tracing]`, `[frontend]`).
+//! (lines 1374-1478): `[server]`, `[server.tls]`, `[server.doh]`, `[dhcp]`,
+//! `[cache]`, `[rate_limit]`, `[ecs]`, `[query_log]`, `[metrics]`,
+//! `[logging]`, `[tracing]`, `[frontend]`, `[[upstreams]]`. The
+//! `blocklists.toml` shape (PRD lines 1480-1558) is `[[sources]]` plus
+//! `[storage]`.
+
+mod validation;
 
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
+use std::path::Path;
+
+pub use validation::{validate_blocklists, validate_config};
+
+/// Errors that can occur while loading or validating configuration.
+#[derive(Debug)]
+pub enum ConfigError {
+    /// Failed to read the config file from disk.
+    Io(std::io::Error),
+    /// The TOML could not be deserialized into the config struct.
+    Parse(toml::de::Error),
+    /// One or more validation rules failed. Each entry is a human-readable
+    /// description of a single failed check.
+    Validation(Vec<String>),
+}
+
+impl std::fmt::Display for ConfigError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ConfigError::Io(e) => write!(f, "config I/O error: {e}"),
+            ConfigError::Parse(e) => write!(f, "config parse error: {e}"),
+            ConfigError::Validation(errs) => {
+                write!(f, "config validation failed:")?;
+                for e in errs {
+                    write!(f, "\n  - {e}")?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+impl std::error::Error for ConfigError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            ConfigError::Io(e) => Some(e),
+            ConfigError::Parse(e) => Some(e),
+            ConfigError::Validation(_) => None,
+        }
+    }
+}
+
+impl From<std::io::Error> for ConfigError {
+    fn from(e: std::io::Error) -> Self {
+        ConfigError::Io(e)
+    }
+}
+
+impl From<toml::de::Error> for ConfigError {
+    fn from(e: toml::de::Error) -> Self {
+        ConfigError::Parse(e)
+    }
+}
+
+/// Load and validate `dnshub.toml` from `path`.
+///
+/// Reads the file, deserializes it into [`DnshubConfig`], then runs
+/// [`DnshubConfig::validate`]. Returns the first error encountered (I/O,
+/// parse, or validation).
+pub fn load_config(path: &Path) -> Result<DnshubConfig, ConfigError> {
+    let contents = std::fs::read_to_string(path)?;
+    let config: DnshubConfig = toml::from_str(&contents)?;
+    config.validate()?;
+    Ok(config)
+}
+
+/// Load and validate `blocklists.toml` from `path`.
+///
+/// Reads the file, deserializes it into [`BlocklistsConfig`], then runs
+/// [`BlocklistsConfig::validate`].
+pub fn load_blocklists(path: &Path) -> Result<BlocklistsConfig, ConfigError> {
+    let contents = std::fs::read_to_string(path)?;
+    let config: BlocklistsConfig = toml::from_str(&contents)?;
+    config.validate()?;
+    Ok(config)
+}
 
 /// Top-level dnshub configuration.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -225,11 +304,42 @@ impl UpstreamConfig {
 // Reserved sections for later stories (defined so the config parses cleanly).
 // ---------------------------------------------------------------------------
 
-/// `[dhcp]` — DHCP server (story 04-001+). Reserved.
+/// `[dhcp]` — DHCP server (story 04-001+).
+///
+/// This is a config skeleton: the fields mirror the PRD `dnshub.toml`
+/// example (lines 1392-1402) so the main config parses cleanly, but the
+/// DHCP server logic itself is implemented in Phase 04 stories.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct DhcpConfig {
     #[serde(default)]
     pub enabled: bool,
+    /// Network interface to bind the DHCP listener to, e.g. `"eth0"`.
+    #[serde(default)]
+    pub interface: String,
+    /// DHCP listen address, e.g. `"0.0.0.0:67"`.
+    #[serde(default)]
+    pub listen: String,
+    /// First address in the dynamic pool, e.g. `"192.168.1.100"`.
+    #[serde(default)]
+    pub pool_start: String,
+    /// Last address in the dynamic pool, e.g. `"192.168.1.200"`.
+    #[serde(default)]
+    pub pool_end: String,
+    /// Subnet mask, e.g. `"255.255.255.0"`.
+    #[serde(default)]
+    pub subnet: String,
+    /// Default gateway/router option, e.g. `"192.168.1.1"`.
+    #[serde(default)]
+    pub router: String,
+    /// Domain name option, e.g. `"levonk.com"`.
+    #[serde(default)]
+    pub domain: String,
+    /// Lease duration in hours.
+    #[serde(default)]
+    pub lease_time_hours: u32,
+    /// NTP server option, e.g. `"172.20.255.55"`.
+    #[serde(default)]
+    pub ntp_server: String,
 }
 
 /// `[rate_limit]` — token bucket rate limiting (story 03-004). Reserved.
@@ -354,7 +464,126 @@ impl DnshubConfig {
                 timeout_ms: 2000,
                 tier: 1,
             }],
+            // The sections below use `#[serde(default = "...")]` helpers that
+            // only apply during deserialization. Mirror those defaults here so
+            // that `defaults()` produces a config that passes `validate()`.
+            metrics: MetricsConfig {
+                listen: default_metrics_listen(),
+                path: default_metrics_path(),
+            },
+            logging: LoggingConfig {
+                level: default_log_level(),
+                format: default_log_format(),
+            },
             ..Self::default()
         }
     }
+
+    /// Validate this config in-place, returning `Err` with a list of every
+    /// failed check. See [`validation::validate_config`] for the rules.
+    pub fn validate(&self) -> Result<(), ConfigError> {
+        validation::validate_config(self).map_err(ConfigError::Validation)
+    }
+}
+
+impl BlocklistsConfig {
+    /// Validate this blocklists config, returning `Err` with a list of every
+    /// failed check. See [`validation::validate_blocklists`] for the rules.
+    pub fn validate(&self) -> Result<(), ConfigError> {
+        validation::validate_blocklists(self).map_err(ConfigError::Validation)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// blocklists.toml — blocklist sources and storage (PRD lines 1480-1558).
+// ---------------------------------------------------------------------------
+
+/// Top-level `blocklists.toml` configuration.
+///
+/// Contains the `[[sources]]` array and the `[storage]` table. This is a
+/// separate file from `dnshub.toml` (see PRD section 4.10) and is loaded via
+/// [`load_blocklists`].
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct BlocklistsConfig {
+    /// Blocklist sources to download and refresh.
+    #[serde(default)]
+    pub sources: Vec<SourceConfig>,
+    /// On-disk storage backend for the compiled blocklist index.
+    #[serde(default)]
+    pub storage: StorageConfig,
+}
+
+/// A single `[[sources]]` entry in `blocklists.toml`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SourceConfig {
+    /// Human-readable name, e.g. `"easylist"`.
+    pub name: String,
+    /// Download URL for the list.
+    pub url: String,
+    /// List format: `"adblock"`, `"domains"`, or `"hosts"`.
+    pub format: String,
+    /// Categories tagged on every entry from this source.
+    #[serde(default)]
+    pub categories: Vec<String>,
+    /// Refresh interval in hours. Mutually exclusive with `refresh_minutes`.
+    #[serde(default)]
+    pub refresh_hours: Option<u64>,
+    /// Refresh interval in minutes. Mutually exclusive with `refresh_hours`.
+    #[serde(default)]
+    pub refresh_minutes: Option<u64>,
+}
+
+impl SourceConfig {
+    /// Effective refresh interval in minutes, preferring `refresh_minutes`
+    /// when set and falling back to `refresh_hours * 60`.
+    pub fn refresh_interval_minutes(&self) -> Option<u64> {
+        if let Some(m) = self.refresh_minutes {
+            return Some(m);
+        }
+        self.refresh_hours.map(|h| h * 60)
+    }
+}
+
+/// The `[storage]` table in `blocklists.toml`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StorageConfig {
+    /// Storage backend type. Currently only `"lmdb"` is supported.
+    #[serde(rename = "type", default = "default_storage_type")]
+    pub storage_type: String,
+
+    /// Filesystem path to the storage database.
+    #[serde(default = "default_storage_path")]
+    pub path: String,
+
+    /// Whether to maintain a Bloom filter for the fast negative path.
+    #[serde(default = "default_bloom_filter")]
+    pub bloom_filter: bool,
+
+    /// Bloom filter false-positive rate (e.g. `0.001` = 0.1%).
+    #[serde(default = "default_bloom_fpr")]
+    pub bloom_fpr: f64,
+}
+
+impl Default for StorageConfig {
+    fn default() -> Self {
+        Self {
+            storage_type: default_storage_type(),
+            path: default_storage_path(),
+            bloom_filter: default_bloom_filter(),
+            bloom_fpr: default_bloom_fpr(),
+        }
+    }
+}
+
+fn default_storage_type() -> String {
+    "lmdb".to_string()
+}
+fn default_storage_path() -> String {
+    "/var/lib/dnshub/blocklists.lmdb".to_string()
+}
+fn default_bloom_filter() -> bool {
+    true
+}
+fn default_bloom_fpr() -> f64 {
+    0.001
 }

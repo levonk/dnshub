@@ -1,0 +1,106 @@
+# Valid dnshub.toml fixture — mirrors the PRD section 4.10 example
+# (lines 1374-1478). Used by config loading/round-trip tests.
+
+[server]
+listen = ["0.0.0.0:53", "[::]:53"]
+protocol = ["udp", "tcp"]
+
+[server.tls]
+enabled = true
+listen = ["0.0.0.0:853", "[::]:853"]
+cert = "/etc/dnshub/tls/fullchain.pem"
+key = "/etc/dnshub/tls/privkey.pem"
+
+[server.doh]
+enabled = true
+listen = ["0.0.0.0:443", "[::]:443"]
+path = "/dns-query"
+cert = "/etc/dnshub/tls/fullchain.pem"
+key = "/etc/dnshub/tls/privkey.pem"
+
+[dhcp]
+enabled = true
+interface = "eth0"
+listen = "0.0.0.0:67"
+pool_start = "192.168.1.100"
+pool_end = "192.168.1.200"
+subnet = "255.255.255.0"
+router = "192.168.1.1"
+domain = "levonk.com"
+lease_time_hours = 24
+ntp_server = "172.20.255.55"
+
+[cache]
+min_ttl = 60
+max_ttl = 86400
+negative_ttl = 300
+serve_stale = true
+serve_stale_ttl = 86400
+max_entries = 100000
+
+[rate_limit]
+requests_per_second = 100
+burst = 200
+per_client = true
+
+[ecs]
+strip = true  # strip EDNS ClientSubnet from responses
+
+[query_log]
+enabled = true
+max_entries = 100000
+retention_days = 7
+
+[metrics]
+listen = "0.0.0.0:9090"
+path = "/metrics"
+
+[logging]
+level = "info"
+format = "json"  # json | plain
+
+[tracing]
+enabled = false
+endpoint = "http://jaeger:4317"
+sample_rate = 0.05
+
+[frontend]
+enabled = true
+listen = "0.0.0.0:8080"
+static_dir = "/etc/dnshub/frontend"
+
+# Upstream tiers (ordered fallback)
+[[upstreams]]
+name = "unbound-validator"
+address = "172.20.255.50:15353"
+protocol = "udp"
+timeout_ms = 2000
+tier = 1
+
+[[upstreams]]
+name = "dnscrypt-odoh"
+address = "172.20.255.52:5053"
+protocol = "udp"
+timeout_ms = 3000
+tier = 2
+
+[[upstreams]]
+name = "dnscrypt-anon"
+address = "172.20.255.53:5053"
+protocol = "udp"
+timeout_ms = 3000
+tier = 3
+
+[[upstreams]]
+name = "unbound-tor"
+address = "172.20.255.54:15353"
+protocol = "udp"
+timeout_ms = 5000
+tier = 4
+
+[[upstreams]]
+name = "unbound-root"
+address = "172.20.255.61:15353"
+protocol = "udp"
+timeout_ms = 5000
+tier = 5
