@@ -11,7 +11,8 @@
 //! | [`config`]  | 01-001/01-004| serde structs (this story), full loading (01-004) |
 //! | `blocklist` | 01-002       | TODO: implemented in later stories |
 //! | `metrics`   | 01-003       | TODO: implemented in later stories |
-//! | `policy`    | 02-001       | TODO: implemented in later stories |
+//! | `policy`    | 02-001       | per-client policy engine + handler (this story) |
+//! | `client_resolver` | 02-001 | client IP → profile resolution (this story) |
 //! | `dhcp`      | 04-001       | TODO: implemented in later stories |
 //! | `query_log` | 05-003       | TODO: implemented in later stories |
 //! | `api`       | 05-004       | TODO: implemented in later stories |
@@ -24,8 +25,10 @@ pub mod dns;
 pub mod blocklist;
 // TODO: implemented in later stories
 pub mod metrics;
-// TODO: implemented in later stories
+// Per-client policy engine + handler (story 02-001).
 pub mod policy;
+// Client IP → policy profile resolution (story 02-001).
+pub mod client_resolver;
 // TODO: implemented in later stories
 pub mod dhcp;
 // TODO: implemented in later stories
