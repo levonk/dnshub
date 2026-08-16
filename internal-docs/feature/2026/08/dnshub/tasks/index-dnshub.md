@@ -9,10 +9,10 @@
 | Story ID | Title | Phase | Status | Assignee | Parallel-safe | Dependencies | Dependants | Modules | Branch |
 |---|---|---:|---|---|---|---|---|---|---|
 | 01-001 | Server scaffold + RequestHandler chain + upstream forwarding + caching | 01 | [x] Done |  | true | — | 02-001, 03-001, 03-002, 03-003, 03-004, 04-005, 04-009, 04-010, 05-002, 05-003, 05-004, 06-001 | dns-server, config | feature/current/dnshub/story-01-001-server-scaffold-and-forwarding |
-| 01-002 | Blocklist storage (LMDB + Bloom filter) + daemon (fetcher/parser/compiler) | 01 | [ ] Todo |  | true | — | 02-001, 02-002, 02-004, 06-002, 06-003 | blocklist, storage | feature/current/dnshub/story-01-002-blocklist-storage-and-daemon |
-| 01-003 | Basic Prometheus metrics | 01 | [ ] Todo |  | true | — | 02-003, 05-001, 05-005 | metrics | feature/current/dnshub/story-01-003-basic-prometheus-metrics |
-| 01-004 | TOML config loading (dnshub.toml + blocklists.toml) | 01 | [ ] Todo |  | true | — | 02-001, 02-004, 04-001, 04-002, 04-003, 04-004, 04-006, 04-007, 04-008 | config | feature/current/dnshub/story-01-004-toml-config-loading |
-| 01-005 | Dockerfile + Ansible role | 01 | [ ] Todo |  | true | — | 04-012, 06-004 | infra, ansible | feature/current/dnshub/story-01-005-dockerfile-and-ansible-role |
+| 01-002 | Blocklist storage (LMDB + Bloom filter) + daemon (fetcher/parser/compiler) | 01 | [~] In-Progress |  | true | — | 02-001, 02-002, 02-004, 06-002, 06-003 | blocklist, storage | feature/current/dnshub/story-01-002-blocklist-storage-and-daemon |
+| 01-003 | Basic Prometheus metrics | 01 | [~] In-Progress |  | true | — | 02-003, 05-001, 05-005 | metrics | feature/current/dnshub/story-01-003-basic-prometheus-metrics |
+| 01-004 | TOML config loading (dnshub.toml + blocklists.toml) | 01 | [~] In-Progress |  | true | — | 02-001, 02-004, 04-001, 04-002, 04-003, 04-004, 04-006, 04-007, 04-008 | config | feature/current/dnshub/story-01-004-toml-config-loading |
+| 01-005 | Dockerfile + Ansible role | 01 | [~] In-Progress |  | true | — | 04-012, 06-004 | infra, ansible | feature/current/dnshub/story-01-005-dockerfile-and-ansible-role |
 | 02-001 | PolicyEngine + ClientResolver + PolicyHandler + policy.toml | 02 | [ ] Todo |  | true | 01-001, 01-002, 01-004 | 04-011 | policy, client-resolver | feature/current/dnshub/story-02-001-policy-engine-and-client-resolver |
 | 02-002 | Category bitmap in LMDB + Adblock Plus parser | 02 | [ ] Todo |  | true | 01-002 | — | blocklist, parser | feature/current/dnshub/story-02-002-category-bitmap-and-adblock-parser |
 | 02-003 | Per-client metrics | 02 | [ ] Todo |  | true | 01-003 | 05-001 | metrics | feature/current/dnshub/story-02-003-per-client-metrics |
