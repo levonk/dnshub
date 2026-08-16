@@ -8,13 +8,14 @@
 //! and drives `block_until_done`. Graceful shutdown is triggered via the
 //! server's shutdown token (wired to Ctrl+C in [`crate`]'s `main`).
 
+use crate::config::ServerConfig;
 use crate::dns::doh::DohServer;
 use crate::dns::dot::DotServer;
 use crate::dns::DnshubHandler;
+use crate::dns::socket::{SocketConfig, bind_tcp, bind_udp};
 use hickory_server::server::Server;
 use std::net::SocketAddr;
 use std::time::Duration;
-use tokio::net::{TcpListener, UdpSocket};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
@@ -35,22 +36,41 @@ impl DnshubServer {
         }
     }
 
-    /// Bind a UDP socket to `addr` and register it with the server.
-    pub async fn register_udp(&mut self, addr: &str) -> std::io::Result<SocketAddr> {
-        let socket = UdpSocket::bind(addr).await?;
-        let bound = socket.local_addr()?;
+    /// Bind a UDP socket to `addr` with performance tuning from `config`
+    /// (SO_REUSEPORT, SO_RCVBUF, SO_SNDBUF) and register it with the server.
+    pub async fn register_udp(
+        &mut self,
+        addr: &str,
+        config: &ServerConfig,
+    ) -> std::io::Result<SocketAddr> {
+        let socket_config = SocketConfig::for_udp(config.reuse_port, config.udp_buffer_size);
+        let (socket, bound) = bind_udp(addr, &socket_config).await?;
         self.server.register_socket(socket);
         info!(addr = %bound, "registered UDP listener");
         Ok(bound)
     }
 
-    /// Bind a TCP listener to `addr` and register it with the server.
-    pub async fn register_tcp(&mut self, addr: &str) -> std::io::Result<SocketAddr> {
-        let listener = TcpListener::bind(addr).await?;
-        let bound = listener.local_addr()?;
+    /// Bind a TCP listener to `addr` with performance tuning from `config`
+    /// (SO_REUSEPORT, SO_RCVBUF, SO_SNDBUF, SO_KEEPALIVE) and register it
+    /// with the server.
+    pub async fn register_tcp(
+        &mut self,
+        addr: &str,
+        config: &ServerConfig,
+    ) -> std::io::Result<SocketAddr> {
+        let socket_config = SocketConfig::for_tcp(
+            config.reuse_port,
+            config.tcp_buffer_size,
+            config.tcp_keepalive_secs,
+        );
+        let (listener, bound) = bind_tcp(addr, &socket_config).await?;
         self.server
             .register_listener(listener, TCP_TIMEOUT, TCP_RESPONSE_BUFFER_SIZE);
-        info!(addr = %bound, "registered TCP listener");
+        info!(
+            addr = %bound,
+            max_connections = config.max_tcp_connections,
+            "registered TCP listener"
+        );
         Ok(bound)
     }
 

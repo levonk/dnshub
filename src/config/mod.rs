@@ -245,6 +245,36 @@ pub struct ServerConfig {
     /// DoH (DNS-over-HTTPS) listener on :443 (story 04-010).
     #[serde(default)]
     pub doh: Option<DohServerConfig>,
+
+    /// Enable SO_REUSEPORT on UDP (and TCP) sockets so multiple worker
+    /// processes/threads can bind the same port and let the kernel
+    /// distribute incoming packets across them (story 06-001).
+    #[serde(default = "default_reuse_port")]
+    pub reuse_port: bool,
+
+    /// UDP socket receive buffer size in bytes (SO_RCVBUF). Larger buffers
+    /// reduce packet drops under burst load. The kernel may cap this at
+    /// `net.core.rmem_max` (Linux) or `kern.ipc.maxsockbuf` (macOS).
+    #[serde(default = "default_udp_buffer_size")]
+    pub udp_buffer_size: usize,
+
+    /// TCP socket buffer size in bytes (applied to both SO_RCVBUF and
+    /// SO_SNDBUF on the listener). DNS over TCP is infrequent relative to
+    /// UDP, so a smaller buffer is sufficient.
+    #[serde(default = "default_tcp_buffer_size")]
+    pub tcp_buffer_size: usize,
+
+    /// Maximum number of concurrent TCP DNS connections. When exceeded, new
+    /// connections are rejected. Protects against TCP-based resource
+    /// exhaustion (story 06-001).
+    #[serde(default = "default_max_tcp_connections")]
+    pub max_tcp_connections: usize,
+
+    /// TCP keepalive timeout in seconds. When `Some(secs)`, SO_KEEPALIVE is
+    /// enabled on accepted TCP connections with the given idle timeout.
+    /// When `None`, keepalive is not enabled.
+    #[serde(default)]
+    pub tcp_keepalive_secs: Option<u64>,
 }
 
 impl Default for ServerConfig {
@@ -254,8 +284,26 @@ impl Default for ServerConfig {
             protocol: default_server_protocol(),
             tls: None,
             doh: None,
+            reuse_port: default_reuse_port(),
+            udp_buffer_size: default_udp_buffer_size(),
+            tcp_buffer_size: default_tcp_buffer_size(),
+            max_tcp_connections: default_max_tcp_connections(),
+            tcp_keepalive_secs: None,
         }
     }
+}
+
+fn default_reuse_port() -> bool {
+    true
+}
+fn default_udp_buffer_size() -> usize {
+    4 * 1024 * 1024 // 4 MiB
+}
+fn default_tcp_buffer_size() -> usize {
+    256 * 1024 // 256 KiB
+}
+fn default_max_tcp_connections() -> usize {
+    1000
 }
 
 fn default_server_listen() -> Vec<String> {

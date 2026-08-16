@@ -66,12 +66,12 @@ async fn main() {
     let config_snapshot = config_store.load_full();
     for addr in &config_snapshot.server.listen {
         // Register UDP first (the primary DNS transport).
-        if let Err(e) = server.register_udp(addr).await {
+        if let Err(e) = server.register_udp(addr, &config_snapshot.server).await {
             error!(addr = %addr, error = %e, "failed to bind UDP listener");
             process::exit(1);
         }
         // Then TCP (for large responses / zone transfers).
-        if let Err(e) = server.register_tcp(addr).await {
+        if let Err(e) = server.register_tcp(addr, &config_snapshot.server).await {
             error!(addr = %addr, error = %e, "failed to bind TCP listener");
             process::exit(1);
         }

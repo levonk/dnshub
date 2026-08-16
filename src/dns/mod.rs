@@ -624,3 +624,4 @@ mod tests {
     }
 }
 pub mod doh;
+pub mod socket;

@@ -68,11 +68,11 @@ async fn forwards_query_and_returns_response() {
     // Start the server on an ephemeral UDP+TCP port on the loopback interface.
     let mut server = DnshubServer::new(handler);
     let udp_addr = server
-        .register_udp("127.0.0.1:0")
+        .register_udp("127.0.0.1:0", &config.server)
         .await
         .expect("failed to bind UDP");
     let _tcp_addr = server
-        .register_tcp("127.0.0.1:0")
+        .register_tcp("127.0.0.1:0", &config.server)
         .await
         .expect("failed to bind TCP");
 
