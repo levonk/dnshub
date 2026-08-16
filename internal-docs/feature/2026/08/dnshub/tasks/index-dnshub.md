@@ -13,10 +13,10 @@
 | 01-003 | Basic Prometheus metrics | 01 | [x] Done |  | true | — | 02-003, 05-001, 05-005 | metrics | feature/current/dnshub/story-01-003-basic-prometheus-metrics |
 | 01-004 | TOML config loading (dnshub.toml + blocklists.toml) | 01 | [x] Done |  | true | — | 02-001, 02-004, 04-001, 04-002, 04-003, 04-004, 04-006, 04-007, 04-008 | config | feature/current/dnshub/story-01-004-toml-config-loading |
 | 01-005 | Dockerfile + Ansible role | 01 | [x] Done |  | true | — | 04-012, 06-004 | infra, ansible | feature/current/dnshub/story-01-005-dockerfile-and-ansible-role |
-| 02-001 | PolicyEngine + ClientResolver + PolicyHandler + policy.toml | 02 | [ ] Todo |  | true | 01-001, 01-002, 01-004 | 04-011 | policy, client-resolver | feature/current/dnshub/story-02-001-policy-engine-and-client-resolver |
-| 02-002 | Category bitmap in LMDB + Adblock Plus parser | 02 | [ ] Todo |  | true | 01-002 | — | blocklist, parser | feature/current/dnshub/story-02-002-category-bitmap-and-adblock-parser |
-| 02-003 | Per-client metrics | 02 | [ ] Todo |  | true | 01-003 | 05-001 | metrics | feature/current/dnshub/story-02-003-per-client-metrics |
-| 02-004 | Hot-reload (SIGHUP) for policy + blocklists | 02 | [ ] Todo |  | true | 01-002, 01-004 | 06-003 | config, hot-reload | feature/current/dnshub/story-02-004-hot-reload-sighup |
+| 02-001 | PolicyEngine + ClientResolver + PolicyHandler + policy.toml | 02 | [~] In-Progress |  | true | 01-001, 01-002, 01-004 | 04-011 | policy, client-resolver | feature/current/dnshub/story-02-001-policy-engine-and-client-resolver |
+| 02-002 | Category bitmap in LMDB + Adblock Plus parser | 02 | [~] In-Progress |  | true | 01-002 | — | blocklist, parser | feature/current/dnshub/story-02-002-category-bitmap-and-adblock-parser |
+| 02-003 | Per-client metrics | 02 | [~] In-Progress |  | true | 01-003 | 05-001 | metrics | feature/current/dnshub/story-02-003-per-client-metrics |
+| 02-004 | Hot-reload (SIGHUP) for policy + blocklists | 02 | [~] In-Progress |  | true | 01-002, 01-004 | 06-003 | config, hot-reload | feature/current/dnshub/story-02-004-hot-reload-sighup |
 | 03-001 | TieredForwardHandler with per-tier timeout | 03 | [ ] Todo |  | true | 01-001 | — | dns-server, forwarding | feature/current/dnshub/story-03-001-tiered-forward-handler |
 | 03-002 | ServeStaleHandler (RFC 8767) | 03 | [ ] Todo |  | true | 01-001 | — | dns-server, cache | feature/current/dnshub/story-03-002-serve-stale-handler |
 | 03-003 | EcsStripHandler | 03 | [ ] Todo |  | true | 01-001 | — | dns-server, ecs | feature/current/dnshub/story-03-003-ecs-strip-handler |
