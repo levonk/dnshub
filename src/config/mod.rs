@@ -389,6 +389,9 @@ impl UpstreamConfig {
 /// This is a config skeleton: the fields mirror the PRD `dnshub.toml`
 /// example (lines 1392-1402) so the main config parses cleanly, but the
 /// DHCP server logic itself is implemented in Phase 04 stories.
+///
+/// Story 04-008 adds the `[dhcp.audit]` and `[dhcp.rogue_detection]`
+/// sub-sections (PRD lines 740-754, 772-777).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct DhcpConfig {
     #[serde(default)]
@@ -420,6 +423,13 @@ pub struct DhcpConfig {
     /// NTP server option, e.g. `"172.20.255.55"`.
     #[serde(default)]
     pub ntp_server: String,
+    /// `[dhcp.audit]` — lease audit log (story 04-008, PRD lines 740-754).
+    #[serde(default)]
+    pub audit: crate::dhcp::audit::AuditConfig,
+    /// `[dhcp.rogue_detection]` — rogue DHCP server detection (story 04-008,
+    /// PRD lines 772-777).
+    #[serde(default)]
+    pub rogue_detection: crate::dhcp::rogue::RogueConfig,
 }
 
 /// `[rate_limit]` — token bucket rate limiting (story 03-004). Reserved.
