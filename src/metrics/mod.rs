@@ -33,6 +33,7 @@
 
 pub mod config;
 pub mod counters;
+pub mod histograms;
 pub mod labels;
 pub mod recorder;
 
