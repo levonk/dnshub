@@ -12,12 +12,16 @@
 //! `blocklists.toml` shape (PRD lines 1480-1558) is `[[sources]]` plus
 //! `[storage]`.
 
+mod hot_reload;
 mod validation;
 
+use arc_swap::ArcSwap;
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
+pub use hot_reload::HotReloadManager;
 pub use validation::{validate_blocklists, validate_config};
 
 /// Errors that can occur while loading or validating configuration.
@@ -91,6 +95,82 @@ pub fn load_blocklists(path: &Path) -> Result<BlocklistsConfig, ConfigError> {
     let config: BlocklistsConfig = toml::from_str(&contents)?;
     config.validate()?;
     Ok(config)
+}
+
+/// Reload `dnshub.toml` from `path`, returning a freshly loaded and
+/// validated [`DnshubConfig`].
+///
+/// This is the same operation as [`load_config`] but is provided as a
+/// distinct name so call sites (e.g. [`HotReloadManager`]) read clearly
+/// as "reload from disk" rather than "initial load".
+pub fn reload_config(path: &Path) -> Result<DnshubConfig, ConfigError> {
+    load_config(path)
+}
+
+/// Atomic, lock-free config holder backed by [`ArcSwap`].
+///
+/// [`ConfigStore`] wraps the active [`DnshubConfig`] in an `ArcSwap` so
+/// that a hot-reload (triggered by SIGHUP, see [`HotReloadManager`]) can
+/// atomically publish a new config without blocking concurrent readers.
+///
+/// Readers call [`ConfigStore::load_full`] to obtain a stable
+/// `Arc<DnshubConfig>` that remains valid for its lifetime even if a
+/// swap happens concurrently — the same guarantee the blocklist
+/// [`HotSwapStore`](crate::blocklist::HotSwapStore) provides.
+#[derive(Debug, Clone)]
+pub struct ConfigStore {
+    inner: Arc<ArcSwap<DnshubConfig>>,
+}
+
+impl ConfigStore {
+    /// Create a new `ConfigStore` holding `config` as the initial value.
+    pub fn new(config: DnshubConfig) -> Self {
+        Self {
+            inner: Arc::new(ArcSwap::from_pointee(config)),
+        }
+    }
+
+    /// Load a stable `Arc<DnshubConfig>` snapshot of the active config.
+    ///
+    /// The returned `Arc` is stable: even if [`ConfigStore::swap`] is
+    /// called concurrently, this `Arc` continues to point at the same
+    /// config object.
+    pub fn load_full(&self) -> Arc<DnshubConfig> {
+        self.inner.load_full()
+    }
+
+    /// Atomically publish a new config.
+    ///
+    /// After this call, new calls to [`ConfigStore::load_full`] return the
+    /// new config. Existing `Arc<DnshubConfig>` holders continue using the
+    /// old config until their `Arc` is dropped.
+    pub fn swap(&self, new_config: DnshubConfig) {
+        self.inner.store(Arc::new(new_config));
+        tracing::info!("config hot-swap completed");
+    }
+
+    /// Reload the config from `path` and, if it loads and validates
+    /// successfully, atomically swap it in.
+    ///
+    /// On error the active config is left untouched.
+    pub fn reload_from(&self, path: &Path) -> Result<(), ConfigError> {
+        let new_config = reload_config(path)?;
+        self.swap(new_config);
+        Ok(())
+    }
+}
+
+/// Paths used by the hot-reload manager to locate config files on disk.
+///
+/// `dnshub.toml` is the main config; `blocklists.toml` is optional and
+/// only reloaded when present (the blocklist daemon is separately
+/// triggered to refresh its sources).
+#[derive(Debug, Clone)]
+pub struct HotReloadPaths {
+    /// Path to `dnshub.toml`.
+    pub config: PathBuf,
+    /// Optional path to `blocklists.toml`.
+    pub blocklists: Option<PathBuf>,
 }
 
 /// Top-level dnshub configuration.

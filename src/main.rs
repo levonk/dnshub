@@ -4,12 +4,19 @@
 //! 01-004), builds the handler chain (Caching → Forwarding via the
 //! `ForwardZoneHandler` installed in the `Catalog`), starts the hickory-server
 //! `Server` on UDP+TCP :53, and handles graceful shutdown via Ctrl+C.
+//!
+//! Story 02-004 installs a SIGHUP hot-reload handler: on SIGHUP the active
+//! `DnshubConfig` (held in a `ConfigStore` / `ArcSwap`) is reloaded from disk
+//! and atomically swapped, and the blocklist daemon is signalled to refresh.
 
-use dnshub::config::{DnshubConfig, UpstreamConfig};
+use dnshub::config::{
+    ConfigStore, DnshubConfig, HotReloadManager, HotReloadPaths, UpstreamConfig,
+};
 use dnshub::dns::forwarding::ForwardingHandler;
 use dnshub::dns::server::DnshubServer;
 use dnshub::dns::DnshubHandler;
 use hickory_server::zone_handler::Catalog;
+use std::path::PathBuf;
 use std::process;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
@@ -32,6 +39,11 @@ async fn main() {
     let config = load_config();
     info!(upstreams = config.upstreams.len(), "configuration loaded");
 
+    // Wrap the config in a ConfigStore (ArcSwap) so the SIGHUP hot-reload
+    // handler can atomically swap in a reloaded config without blocking
+    // concurrent query processing.
+    let config_store = std::sync::Arc::new(ConfigStore::new(config));
+
     // Build the handler chain.
     //
     // The Catalog is the hickory-native RequestHandler. We install a
@@ -39,7 +51,7 @@ async fn main() {
     // the tier-1 upstream, with caching configured on the resolver options.
     // DnshubHandler wraps the Catalog and exposes a Vec<Box<dyn DnsMiddleware>>
     // chain for future stories (rate limit, policy, ECS strip, …).
-    let handler = match build_handler(&config) {
+    let handler = match build_handler(&config_store.load_full()) {
         Ok(h) => h,
         Err(e) => {
             error!(error = %e, "failed to build DNS handler");
@@ -49,7 +61,7 @@ async fn main() {
 
     // Start the server on the configured listen addresses.
     let mut server = DnshubServer::new(handler);
-    for addr in &config.server.listen {
+    for addr in &config_store.load_full().server.listen {
         // Register UDP first (the primary DNS transport).
         if let Err(e) = server.register_udp(addr).await {
             error!(addr = %addr, error = %e, "failed to bind UDP listener");
@@ -61,6 +73,15 @@ async fn main() {
             process::exit(1);
         }
     }
+
+    // Install the SIGHUP hot-reload handler (story 02-004).
+    //
+    // On SIGHUP, HotReloadManager reloads dnshub.toml from disk, validates it,
+    // and atomically swaps the active config via ConfigStore (ArcSwap). If a
+    // blocklist daemon notify is wired, it also triggers an immediate
+    // blocklist refresh. Invalid configs are logged and discarded — the
+    // server keeps serving with the last-known-good config.
+    install_sighup_hot_reload(config_store.clone());
 
     // Graceful shutdown: Ctrl+C (SIGINT) cancels the token.
     let shutdown = CancellationToken::new();
@@ -85,6 +106,44 @@ async fn main() {
 /// and fall back to defaults on missing sections.
 fn load_config() -> DnshubConfig {
     DnshubConfig::defaults()
+}
+
+/// Install the SIGHUP hot-reload handler.
+///
+/// Resolves the config path from `DNSHUB_CONFIG` (default
+/// `/etc/dnshub/dnshub.toml`) and the optional blocklists path from
+/// `DNSHUB_BLOCKLISTS` (default `/etc/dnshub/blocklists.toml`). If the
+/// config path does not exist on disk the hot-reload handler is still
+/// installed — a SIGHUP will then log an error and keep the in-memory
+/// config, which is the correct behavior for the default-config scaffold.
+fn install_sighup_hot_reload(config_store: std::sync::Arc<ConfigStore>) {
+    let config_path = std::env::var("DNSHUB_CONFIG")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("/etc/dnshub/dnshub.toml"));
+
+    let blocklists_path = std::env::var("DNSHUB_BLOCKLISTS")
+        .map(PathBuf::from)
+        .ok();
+
+    let paths = HotReloadPaths {
+        config: config_path,
+        blocklists: blocklists_path,
+    };
+
+    // The blocklist daemon notify is not wired here yet (the daemon is
+    // instantiated in a later story that wires the full runtime). When the
+    // daemon is available, pass its `refresh_notify()` as the third arg.
+    let manager = std::sync::Arc::new(HotReloadManager::new(
+        config_store,
+        paths,
+        None::<std::sync::Arc<tokio::sync::Notify>>,
+    ));
+
+    tokio::spawn(async move {
+        manager.run().await;
+    });
+
+    info!("SIGHUP hot-reload handler scheduled");
 }
 
 /// Build the [`DnshubHandler`] from the configuration: a [`Catalog`] with a
