@@ -42,7 +42,7 @@
 | 06-001 | Performance tuning (SO_REUSEPORT, buffer sizes) | 06 | [~] In-Progress |  | true | 01-001 | — | dns-server, performance | feature/current/dnshub/story-06-001-performance-tuning-so-reuseport |
 | 06-002 | Blocklist source failure handling (backoff, circuit breaker) | 06 | [~] In-Progress |  | true | 01-002 | — | blocklist, reliability | feature/current/dnshub/story-06-002-blocklist-failure-handling-backoff |
 | 06-003 | Hot-reload testing under load | 06 | [~] In-Progress |  | true | 02-004, 01-002 | — | testing, hot-reload | feature/current/dnshub/story-06-003-hot-reload-testing-under-load |
-| 06-004 | Migration from existing stack | 06 | [ ] Todo |  | true | 01-005, 04-012 | — | infra, migration | feature/current/dnshub/story-06-004-migration-from-existing-stack |
+| 06-004 | Migration from existing stack | 06 | [~] In-Progress |  | true | 01-005, 04-012 | — | infra, migration | feature/current/dnshub/story-06-004-migration-from-existing-stack |
 
 ## Phase Summary
 
