@@ -499,19 +499,45 @@ fn default_log_format() -> String {
     "json".to_string()
 }
 
-/// `[tracing]` — Jaeger tracing (story 05-002). Reserved.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+/// `[tracing]` — Jaeger tracing (story 05-002).
+///
+/// Configures OpenTelemetry trace export to a Jaeger (or OTLP-compatible)
+/// collector. Traces are sampled at `sample_rate` to minimize hot-path
+/// overhead (1-10% recommended depending on query volume).
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TracingConfig {
+    /// Master switch for Jaeger/OTel trace export.
     #[serde(default)]
     pub enabled: bool,
+    /// Jaeger/OTLP collector endpoint, e.g. `"http://jaeger:4317"`.
     #[serde(default)]
     pub endpoint: String,
+    /// Fraction of spans to export (0.0 = none, 1.0 = all).
+    /// Recommended: 0.01-0.10 depending on query volume.
     #[serde(default = "default_trace_sample_rate")]
     pub sample_rate: f64,
+    /// Service name reported to Jaeger (defaults to `"dnshub"`).
+    #[serde(default = "default_trace_service_name")]
+    pub service_name: String,
+}
+
+impl Default for TracingConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            endpoint: String::new(),
+            sample_rate: default_trace_sample_rate(),
+            service_name: default_trace_service_name(),
+        }
+    }
 }
 
 fn default_trace_sample_rate() -> f64 {
     0.05
+}
+
+fn default_trace_service_name() -> String {
+    "dnshub".to_string()
 }
 
 /// `[frontend]` — NextJS static export (story 05-006). Reserved.

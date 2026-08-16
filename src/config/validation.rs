@@ -295,6 +295,9 @@ fn validate_tracing(t: &super::TracingConfig, errors: &mut Vec<String>) {
                 t.sample_rate
             ));
         }
+        if t.service_name.is_empty() {
+            errors.push("[tracing].service_name must not be empty when tracing is enabled".to_string());
+        }
     }
 }
 

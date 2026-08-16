@@ -20,6 +20,8 @@
 
 pub mod config;
 pub mod dns;
+// Structured JSON logging + Jaeger tracing (story 05-002).
+pub mod observability;
 
 // TODO: implemented in later stories
 pub mod blocklist;
