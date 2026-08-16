@@ -1,0 +1,26 @@
+---
+# meta/main.yml — Ansible Galaxy metadata for the dns-dnshub role.
+
+galaxy_info:
+  author: Levonk
+  description: Deploy the dnshub DNS orchestrator container (Rust).
+  license: "MIT OR Apache-2.0"
+  min_ansible_version: "2.14"
+  platforms:
+    - name: Debian
+      versions:
+        - bookworm
+    - name: Ubuntu
+      versions:
+        - noble
+  galaxy_tags:
+    - dns
+    - networking
+    - adblock
+    - dnscrypt
+    - dhcp
+    - dot
+    - doh
+    - rust
+
+dependencies: []

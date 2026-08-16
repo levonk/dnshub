@@ -1,0 +1,109 @@
+---
+# tasks/main.yml — deploy the dnshub container.
+
+# ---------------------------------------------------------------------------
+# Ensure the config directory exists on the host.
+# ---------------------------------------------------------------------------
+- name: Ensure dnshub config directory exists
+  ansible.builtin.file:
+    path: "{{ dnshub_config_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Ensure dnshub TLS directory exists
+  ansible.builtin.file:
+    path: "{{ dnshub_config_dir }}/tls"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+# ---------------------------------------------------------------------------
+# Render config templates from infra_* variables.
+# ---------------------------------------------------------------------------
+- name: Render dnshub.toml
+  ansible.builtin.template:
+    src: dnshub.toml.j2
+    dest: "{{ dnshub_config_dir }}/dnshub.toml"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart dnshub
+
+- name: Render blocklists.toml
+  ansible.builtin.template:
+    src: blocklists.toml.j2
+    dest: "{{ dnshub_config_dir }}/blocklists.toml"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart dnshub
+
+- name: Render policy.toml (if enabled)
+  ansible.builtin.template:
+    src: policy.toml.j2
+    dest: "{{ dnshub_config_dir }}/policy.toml"
+    owner: root
+    group: root
+    mode: "0644"
+  when: dnshub_policy_enabled | default(false)
+  notify: restart dnshub
+
+# ---------------------------------------------------------------------------
+# Create the Docker named volume for persistent data (LMDB + SQLite).
+# ---------------------------------------------------------------------------
+- name: Ensure dnshub data volume exists
+  community.docker.docker_volume:
+    name: "{{ dnshub_data_volume }}"
+    state: present
+
+# ---------------------------------------------------------------------------
+# Deploy the container.
+#
+# Port mappings follow PRD section 6.1:
+#   53   - DNS (UDP/TCP)
+#   853  - DoT
+#   443  - DoH
+#   67   - DHCPv4 (UDP)
+#   547  - DHCPv6 (UDP)
+#   9090 - Prometheus metrics
+#   8080 - NextJS frontend + REST API
+#
+# Volume mounts:
+#   - config dir (read-only) -> /etc/dnshub
+#   - data volume            -> /var/lib/dnshub
+#   - TLS certs (read-only)  -> /etc/dnshub/tls
+# ---------------------------------------------------------------------------
+- name: Deploy dnshub container
+  community.docker.docker_container:
+    name: "{{ dnshub_container_name }}"
+    image: "{{ dnshub_image }}:{{ dnshub_tag }}"
+    state: started
+    restart_policy: "{{ dnshub_restart_policy }}"
+    networks:
+      - name: "{{ dnshub_network }}"
+        ipv4_address: "{{ dnshub_ipv4_address }}"
+    published_ports:
+      - "{{ dnshub_port_dns_host }}:{{ dnshub_port_dns_container }}/udp"
+      - "{{ dnshub_port_dns_host }}:{{ dnshub_port_dns_container }}/tcp"
+      - "{{ dnshub_port_dot_host }}:{{ dnshub_port_dot_container }}/tcp"
+      - "{{ dnshub_port_doh_host }}:{{ dnshub_port_doh_container }}/tcp"
+      - "{{ dnshub_port_dhcp_host }}:{{ dnshub_port_dhcp_container }}/udp"
+      - "{{ dnshub_port_dhcpv6_host }}:{{ dnshub_port_dhcpv6_container }}/udp"
+      - "{{ dnshub_port_metrics_host }}:{{ dnshub_port_metrics_container }}/tcp"
+      - "{{ dnshub_port_frontend_host }}:{{ dnshub_port_frontend_container }}/tcp"
+    volumes:
+      - "{{ dnshub_config_dir }}:/etc/dnshub:ro"
+      - "{{ dnshub_data_volume }}:/var/lib/dnshub"
+      - "{{ dnshub_tls_host_dir }}:/etc/dnshub/tls:ro"
+    env:
+      DNSHUB_CONFIG: "{{ dnshub_config_file }}"
+      RUST_LOG: "{{ dnshub_log_level }}"
+    command: ["dnshub", "--config", "{{ dnshub_config_file }}"]
+    log_driver: json-file
+    log_options:
+      max-size: "10m"
+      max-file: "3"
+  notify: restart dnshub

@@ -1,0 +1,22 @@
+# blocklists.toml — rendered by the dns-dnshub Ansible role.
+# Blocklist source subscriptions and storage configuration.
+
+{% for source in dnshub_blocklist_sources %}
+[[sources]]
+name = "{{ source.name }}"
+url = "{{ source.url }}"
+format = "{{ source.format }}"
+categories = [{% for c in source.categories %}"{{ c }}"{% if not loop.last %}, {% endif %}{% endfor %}]
+{% if source.refresh_minutes is defined %}
+refresh_minutes = {{ source.refresh_minutes }}
+{% else %}
+refresh_hours = {{ source.refresh_hours }}
+{% endif %}
+
+{% endfor %}
+# Storage
+[storage]
+type = "{{ dnshub_blocklist_storage_type }}"
+path = "{{ dnshub_blocklist_storage_path }}"
+bloom_filter = {{ dnshub_blocklist_bloom_filter | lower }}
+bloom_fpr = {{ dnshub_blocklist_bloom_fpr }}

@@ -1,0 +1,9 @@
+---
+# handlers/main.yml — handlers notified by tasks in this role.
+
+- name: Restart dnshub container
+  community.docker.docker_container:
+    name: "{{ dnshub_container_name }}"
+    state: started
+    restart: true
+  listen: restart dnshub
