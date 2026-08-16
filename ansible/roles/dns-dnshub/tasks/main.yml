@@ -60,7 +60,17 @@
     state: present
 
 # ---------------------------------------------------------------------------
+# Create the macvlan Docker network (required for DHCP L2 broadcast access).
+# See PRD 4.4 (lines 948-955). The parent interface must exist on the host.
+# ---------------------------------------------------------------------------
+- name: Create macvlan network for DHCP L2 access
+  ansible.builtin.include_tasks: macvlan.yml
+
+# ---------------------------------------------------------------------------
 # Deploy the container.
+#
+# The container is attached to the macvlan network (not the default bridge)
+# so it has its own MAC address on the physical LAN — required for DHCP.
 #
 # Port mappings follow PRD section 6.1:
 #   53   - DNS (UDP/TCP)
@@ -68,6 +78,7 @@
 #   443  - DoH
 #   67   - DHCPv4 (UDP)
 #   547  - DHCPv6 (UDP)
+#   69   - TFTP (UDP, PXE network boot)
 #   9090 - Prometheus metrics
 #   8080 - NextJS frontend + REST API
 #
@@ -92,6 +103,7 @@
       - "{{ dnshub_port_doh_host }}:{{ dnshub_port_doh_container }}/tcp"
       - "{{ dnshub_port_dhcp_host }}:{{ dnshub_port_dhcp_container }}/udp"
       - "{{ dnshub_port_dhcpv6_host }}:{{ dnshub_port_dhcpv6_container }}/udp"
+      - "{{ dnshub_port_tftp_host }}:{{ dnshub_port_tftp_container }}/udp"
       - "{{ dnshub_port_metrics_host }}:{{ dnshub_port_metrics_container }}/tcp"
       - "{{ dnshub_port_frontend_host }}:{{ dnshub_port_frontend_container }}/tcp"
     volumes:

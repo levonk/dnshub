@@ -87,11 +87,12 @@ USER dnshub
 #   53   - DNS (UDP/TCP)
 #   853  - DNS-over-TLS
 #   443  - DNS-over-HTTPS
-#   67   - DHCPv4 (UDP)
-#   547  - DHCPv6 (UDP)
+#   67   - DHCPv4 (UDP, requires macvlan for L2 broadcast access)
+#   547  - DHCPv6 (UDP, requires macvlan for L2 broadcast access)
+#   69   - TFTP (UDP, PXE/BOOTP network boot)
 #   9090 - Prometheus metrics
 #   8080 - NextJS frontend + REST API
-EXPOSE 53/udp 53/tcp 853/tcp 443/tcp 67/udp 547/udp 9090/tcp 8080/tcp
+EXPOSE 53/udp 53/tcp 853/tcp 443/tcp 67/udp 547/udp 69/udp 9090/tcp 8080/tcp
 
 # tini handles signal forwarding and zombie reaping for the tokio runtime.
 ENTRYPOINT ["/usr/bin/tini", "--"]

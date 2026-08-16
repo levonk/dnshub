@@ -14,12 +14,21 @@ dnshub_container_name: "dnshub"
 dnshub_restart_policy: "unless-stopped"
 
 # ---------------------------------------------------------------------------
-# Network
+# Network — macvlan (required for DHCP L2 broadcast access; see PRD 4.4)
 # ---------------------------------------------------------------------------
-# The static IP assigned to the dnshub container on the localnet network.
-# Reuses 172.20.255.67 (formerly AdGuard Home). See PRD 6.1.
-dnshub_network: "localnet-network"
-dnshub_ipv4_address: "{{ infra_network_ip_dns_dnshub | default('172.20.255.67') }}"
+# The macvlan network gives dnshub its own MAC address on the physical
+# network, which is required for a DHCP server. Docker bridge networking
+# does not provide L2 broadcast access. See PRD lines 948-955.
+dnshub_network: "{{ infra_dhcp_macvlan_name | default('localnet-macvlan') }}"
+dnshub_network_driver: "macvlan"
+dnshub_ipv4_address: "{{ infra_dhcp_macvlan_ip | default(infra_network_ip_dns_dnshub | default('172.20.255.67')) }}"
+
+# macvlan parent interface (the host's physical interface). This MUST be
+# configured on the host before running the role. See PRD 6.1 / 6.2.
+dnshub_macvlan_parent: "{{ infra_dhcp_macvlan_parent | default('eth0') }}"
+dnshub_macvlan_subnet: "{{ infra_dhcp_macvlan_subnet | default('172.20.255.0/24') }}"
+dnshub_macvlan_gateway: "{{ infra_dhcp_macvlan_gateway | default('172.20.255.1') }}"
+dnshub_macvlan_ip_range: "{{ infra_dhcp_macvlan_ip_range | default('172.20.255.64/28') }}"
 
 # ---------------------------------------------------------------------------
 # Ports (PRD 6.1 / 6.2 lines 1657-1674)
@@ -34,6 +43,8 @@ dnshub_port_dhcp_host: "{{ infra_port_dns_dnshub_dhcp_host | default('67') }}"
 dnshub_port_dhcp_container: "{{ infra_port_dns_dnshub_dhcp_container | default('67') }}"
 dnshub_port_dhcpv6_host: "{{ infra_port_dns_dnshub_dhcpv6_host | default('547') }}"
 dnshub_port_dhcpv6_container: "{{ infra_port_dns_dnshub_dhcpv6_container | default('547') }}"
+dnshub_port_tftp_host: "{{ infra_port_dns_dnshub_tftp_host | default('69') }}"
+dnshub_port_tftp_container: "{{ infra_port_dns_dnshub_tftp_container | default('69') }}"
 dnshub_port_metrics_host: "{{ infra_port_dns_dnshub_metrics_host | default('9090') }}"
 dnshub_port_metrics_container: "{{ infra_port_dns_dnshub_metrics_container | default('9090') }}"
 dnshub_port_frontend_host: "{{ infra_port_dns_dnshub_frontend_host | default('8080') }}"
@@ -51,9 +62,12 @@ dnshub_data_volume: "{{ infra_storage_dns_dnshub_volume | default('localnet-dns-
 dnshub_config_dir: "{{ infra_storage_dns_dnshub_config_dir | default('/srv/services/dnshub') }}"
 
 # TLS cert/key paths mounted read-only from the host (Traefik/ACME certs).
+# The host directory is mounted into the container at /etc/dnshub/tls (ro).
+# See PRD 6.4 — no new vault secrets; reuse existing Traefik/ACME certs.
 dnshub_tls_cert: "/etc/dnshub/tls/fullchain.pem"
 dnshub_tls_key: "/etc/dnshub/tls/privkey.pem"
-dnshub_tls_host_dir: "/srv/traefik/acme"
+dnshub_tls_host_dir: "{{ infra_dnshub_tls_cert_dir | default('/srv/traefik/acme') }}"
+dnshub_tls_enabled: true
 
 # ---------------------------------------------------------------------------
 # Config file locations inside the container
