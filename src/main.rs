@@ -12,6 +12,7 @@
 use dnshub::config::{
     ConfigStore, DnshubConfig, HotReloadManager, HotReloadPaths, UpstreamConfig,
 };
+use dnshub::dns::doh::DohServer;
 use dnshub::dns::forwarding::ForwardingHandler;
 use dnshub::dns::server::DnshubServer;
 use dnshub::dns::DnshubHandler;
@@ -61,7 +62,8 @@ async fn main() {
 
     // Start the server on the configured listen addresses.
     let mut server = DnshubServer::new(handler);
-    for addr in &config_store.load_full().server.listen {
+    let config_snapshot = config_store.load_full();
+    for addr in &config_snapshot.server.listen {
         // Register UDP first (the primary DNS transport).
         if let Err(e) = server.register_udp(addr).await {
             error!(addr = %addr, error = %e, "failed to bind UDP listener");
@@ -71,6 +73,31 @@ async fn main() {
         if let Err(e) = server.register_tcp(addr).await {
             error!(addr = %addr, error = %e, "failed to bind TCP listener");
             process::exit(1);
+        }
+    }
+
+    // Start the DoH (DNS-over-HTTPS) server when [server.doh].enabled = true.
+    // The DoH HTTPS listeners are attached to the same hickory-server `Server`
+    // so they share the DnshubHandler (same policy, blocklists, forwarding).
+    if let Some(doh_cfg) = &config_snapshot.server.doh {
+        if doh_cfg.enabled {
+            match DohServer::new(doh_cfg, config_snapshot.server.tls.as_ref()) {
+                Ok(doh) => match server.register_doh(&doh).await {
+                    Ok(addrs) => {
+                        for a in &addrs {
+                            info!(addr = %a, path = %doh.path(), "DoH server listening");
+                        }
+                    }
+                    Err(e) => {
+                        error!(error = %e, "failed to register DoH listener");
+                        process::exit(1);
+                    }
+                },
+                Err(e) => {
+                    error!(error = %e, "failed to build DoH server");
+                    process::exit(1);
+                }
+            }
         }
     }
 

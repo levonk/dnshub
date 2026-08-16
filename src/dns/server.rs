@@ -1,11 +1,13 @@
-//! hickory-server `Server` setup (UDP + TCP).
+//! hickory-server `Server` setup (UDP + TCP + DoT + DoH).
 //!
 //! In hickory-server 0.26 the old `ServerFuture` was renamed to
 //! [`Server`](hickory_server::server::Server). [`DnshubServer`] owns the
-//! `Server<DnshubHandler>`, registers bound UDP/TCP sockets, and drives
-//! `block_until_done`. Graceful shutdown is triggered via the server's
-//! shutdown token (wired to Ctrl+C in [`crate`]'s `main`).
+//! `Server<DnshubHandler>`, registers bound UDP/TCP sockets, optionally
+//! registers DoH (HTTPS) listeners via [`DohServer`](crate::dns::doh::DohServer),
+//! and drives `block_until_done`. Graceful shutdown is triggered via the
+//! server's shutdown token (wired to Ctrl+C in [`crate`]'s `main`).
 
+use crate::dns::doh::DohServer;
 use crate::dns::DnshubHandler;
 use hickory_server::server::Server;
 use std::net::SocketAddr;
@@ -48,6 +50,19 @@ impl DnshubServer {
             .register_listener(listener, TCP_TIMEOUT, TCP_RESPONSE_BUFFER_SIZE);
         info!(addr = %bound, "registered TCP listener");
         Ok(bound)
+    }
+
+    /// Register the DoH (HTTPS) listeners from a configured [`DohServer`].
+    ///
+    /// The HTTPS listeners are attached to the same hickory-server [`Server`]
+    /// so they share the [`DnshubHandler`] (and therefore the same per-client
+    /// policy, blocklists, and forwarding) as the UDP/TCP listeners. Returns
+    /// the bound DoH socket addresses.
+    pub async fn register_doh(
+        &mut self,
+        doh: &DohServer,
+    ) -> Result<Vec<SocketAddr>, crate::dns::doh::DohError> {
+        doh.register(&mut self.server).await
     }
 
     /// Run the server until `shutdown` is cancelled, then shut down gracefully.

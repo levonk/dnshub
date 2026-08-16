@@ -184,11 +184,27 @@ fn validate_server(server: &super::ServerConfig, errors: &mut Vec<String>) {
             if doh.path.is_empty() {
                 errors.push("[server.doh].path is required when doh is enabled".to_string());
             }
-            if doh.cert.is_empty() {
-                errors.push("[server.doh].cert is required when doh is enabled".to_string());
+            // DoH may reuse the DoT ([server.tls]) cert/key when it does not
+            // specify its own. Only require DoH cert/key when DoT is not
+            // enabled with cert/key of its own.
+            let tls_enabled = server
+                .tls
+                .as_ref()
+                .map(|t| t.enabled && !t.cert.is_empty() && !t.key.is_empty())
+                .unwrap_or(false);
+            if doh.cert.is_empty() && !tls_enabled {
+                errors.push(
+                    "[server.doh].cert is required when doh is enabled \
+                     (or enable [server.tls] with cert/key to reuse them)"
+                        .to_string(),
+                );
             }
-            if doh.key.is_empty() {
-                errors.push("[server.doh].key is required when doh is enabled".to_string());
+            if doh.key.is_empty() && !tls_enabled {
+                errors.push(
+                    "[server.doh].key is required when doh is enabled \
+                     (or enable [server.tls] with cert/key to reuse them)"
+                        .to_string(),
+                );
             }
         }
     }
