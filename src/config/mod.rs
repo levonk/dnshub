@@ -386,9 +386,13 @@ impl UpstreamConfig {
 
 /// `[dhcp]` — DHCP server (story 04-001+).
 ///
-/// This is a config skeleton: the fields mirror the PRD `dnshub.toml`
-/// example (lines 1392-1402) so the main config parses cleanly, but the
-/// DHCP server logic itself is implemented in Phase 04 stories.
+/// The flat fields (`enabled`, `interface`, `listen`, `pool_start`,
+/// `pool_end`, `subnet`, `router`, `domain`, `lease_time_hours`,
+/// `ntp_server`) are the legacy single-pool config from story 01-004.
+/// The `v4` field holds the structured multi-pool config introduced in
+/// story 04-001 (see [`crate::dhcp::v4::config::DhcpV4Config`]). When
+/// `v4` is populated, the DHCPv4 server uses it; the flat fields are
+/// kept for backward compatibility with existing configs.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct DhcpConfig {
     #[serde(default)]
@@ -420,6 +424,11 @@ pub struct DhcpConfig {
     /// NTP server option, e.g. `"172.20.255.55"`.
     #[serde(default)]
     pub ntp_server: String,
+    /// Structured DHCPv4 config (story 04-001): multiple pools, static
+    /// leases, arbitrary options. When present, the DHCPv4 server uses
+    /// this instead of the flat fields above.
+    #[serde(default)]
+    pub v4: crate::dhcp::v4::config::DhcpV4Config,
 }
 
 /// `[rate_limit]` — token bucket rate limiting (story 03-004). Reserved.
