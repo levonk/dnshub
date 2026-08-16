@@ -27,8 +27,18 @@
 //! via [`ClientResolver`](crate::client_resolver::ClientResolver), evaluates
 //! the queried domain, and returns [`MiddlewareAction::Reject`] for blocked
 //! queries or [`MiddlewareAction::Continue`] to let the request proceed.
+//!
+//! ## ECS stripping (story 03-003)
+//!
+//! [`EcsStripHandler`](ecs_strip::EcsStripHandler) implements [`DnsMiddleware`]
+//! and is inserted into the chain via [`DnshubHandler::with_ecs_strip`] when
+//! `config.ecs.strip` is enabled. It uses the [`DnsMiddleware::rewrite`] hook
+//! to remove the EDNS Client Subnet option (RFC 7871) from queries before
+//! forwarding, preventing upstream resolvers from using the client's subnet
+//! for geo-targeting.
 
 pub mod caching;
+pub mod ecs_strip;
 pub mod forwarding;
 pub mod server;
 
@@ -61,11 +71,33 @@ pub enum MiddlewareAction {
 ///
 /// This is the extensibility point for stories 02-001 (PolicyHandler),
 /// 03-003 (EcsStripHandler), 03-004 (RateLimitHandler), etc.
+///
+/// The trait has two hooks:
+///
+/// - [`process`](DnsMiddleware::process) — inspect the request and return
+///   [`MiddlewareAction::Continue`] or [`MiddlewareAction::Reject`]. This is
+///   used by policy / rate-limit middleware that may short-circuit the chain.
+/// - [`rewrite`](DnsMiddleware::rewrite) — optionally return a replacement
+///   [`Request`] with modifications applied (e.g. ECS stripping). The default
+///   implementation returns `None` (no modification). Rewrites are applied
+///   *after* all `process` calls have returned `Continue`, so a rejected
+///   request is never rewritten.
 #[async_trait]
 pub trait DnsMiddleware: Send + Sync + 'static {
     /// Inspect `request` before forwarding.
     async fn process(&self, _request: &Request) -> MiddlewareAction {
         MiddlewareAction::Continue
+    }
+
+    /// Optionally provide a replacement [`Request`] with modifications applied
+    /// (e.g. EDNS Client Subnet stripping).
+    ///
+    /// Returns `None` by default — the original request is forwarded
+    /// unchanged. When a middleware returns `Some(request)`, the
+    /// [`DnshubHandler`] substitutes the new request for all subsequent
+    /// middleware rewrites and for the final catalog delegation.
+    async fn rewrite(&self, _request: &Request) -> Option<Request> {
+        None
     }
 }
 
@@ -107,6 +139,20 @@ impl DnshubHandler {
         self.middleware.insert(0, mw);
         self
     }
+
+    /// Conditionally add an [`EcsStripHandler`](ecs_strip::EcsStripHandler) to
+    /// the middleware chain.
+    ///
+    /// When `strip` is `true`, an `EcsStripHandler` is appended to the end of
+    /// the chain so it runs after policy / rate-limit middleware. When `false`,
+    /// this is a no-op — the handler is not added.
+    pub fn with_ecs_strip(self, strip: bool) -> Self {
+        if strip {
+            self.with_middleware(Box::new(ecs_strip::EcsStripHandler::new(true)))
+        } else {
+            self
+        }
+    }
 }
 
 impl RequestHandler for DnshubHandler {
@@ -146,8 +192,21 @@ impl RequestHandler for DnshubHandler {
                 }
             }
 
+            // Apply request rewrites (e.g. ECS stripping). Each middleware
+            // that returns `Some(request)` replaces the current request for
+            // subsequent rewrites and for the final catalog delegation.
+            let mut owned_request: Option<Request> = None;
+            for mw in &self.middleware {
+                let current: &Request = owned_request.as_ref().unwrap_or(request);
+                if let Some(new_req) = mw.rewrite(current).await {
+                    debug!(middleware = mw.label(), "middleware: rewrote request");
+                    owned_request = Some(new_req);
+                }
+            }
+            let final_request: &Request = owned_request.as_ref().unwrap_or(request);
+
             // Delegate to the catalog (zone dispatch / forwarding).
-            self.catalog.handle_request::<R, T>(request, response_handle).await
+            self.catalog.handle_request::<R, T>(final_request, response_handle).await
         })
     }
 }
