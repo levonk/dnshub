@@ -141,6 +141,8 @@ pub trait LeaseStoreV6: Send + Sync {
     async fn upsert_static_lease_v6(&self, lease: &StaticLeaseV6) -> Result<()>;
     /// Delete a static lease by DUID.
     async fn delete_static_lease_v6(&self, duid: &str) -> Result<()>;
+    /// List all static leases.
+    async fn list_static_leases_v6(&self) -> Result<Vec<StaticLeaseV6>>;
 }
 
 /// SQLite-backed implementation of [`LeaseStoreV6`].
@@ -434,6 +436,21 @@ impl LeaseStoreV6 for SqliteLeaseStoreV6 {
                 params![duid],
             )?;
             Ok(())
+        })
+    }
+
+    async fn list_static_leases_v6(&self) -> Result<Vec<StaticLeaseV6>> {
+        self.with_conn(|conn| {
+            let mut stmt = conn.prepare(
+                "SELECT duid, ipv6_address, hostname, profile
+                 FROM dhcpv6_static_leases ORDER BY duid",
+            )?;
+            let rows = stmt.query_map([], row_to_static)?;
+            let mut out = Vec::new();
+            for row in rows {
+                out.push(row?);
+            }
+            Ok(out)
         })
     }
 }

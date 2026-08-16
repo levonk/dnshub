@@ -195,6 +195,15 @@ pub trait LeaseStoreV4: Send + Sync {
         lease: &StaticLeaseV4Record,
     ) -> Result<(), LeaseStoreError>;
 
+    /// Delete the static lease for `mac`. Returns `NotFound` if no row
+    /// was deleted.
+    async fn delete_static_lease(&self, mac: &str) -> Result<(), LeaseStoreError>;
+
+    /// List all static leases.
+    async fn list_static_leases(
+        &self,
+    ) -> Result<Vec<StaticLeaseV4Record>, LeaseStoreError>;
+
     /// Mark `ip` as conflicted (DECLINE). Sets the lease state to
     /// `Declined` so the pool allocator skips it.
     async fn mark_conflicted(&self, ip: Ipv4Addr) -> Result<(), LeaseStoreError>;
@@ -495,6 +504,33 @@ impl LeaseStoreV4 for SqliteLeaseStoreV4 {
             ],
         )?;
         Ok(())
+    }
+
+    async fn delete_static_lease(&self, mac: &str) -> Result<(), LeaseStoreError> {
+        let conn = self.conn.lock();
+        let affected = conn.execute(
+            "DELETE FROM dhcp_static_leases WHERE mac_address = ?1",
+            params![mac],
+        )?;
+        if affected == 0 {
+            Err(LeaseStoreError::NotFound)
+        } else {
+            Ok(())
+        }
+    }
+
+    async fn list_static_leases(
+        &self,
+    ) -> Result<Vec<StaticLeaseV4Record>, LeaseStoreError> {
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare(
+            "SELECT mac_address, ip_address, hostname, profile \
+             FROM dhcp_static_leases ORDER BY mac_address",
+        )?;
+        let leases = stmt
+            .query_map([], Self::row_to_static)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(leases)
     }
 
     async fn mark_conflicted(&self, ip: Ipv4Addr) -> Result<(), LeaseStoreError> {
