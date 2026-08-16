@@ -6,13 +6,13 @@ listen = ["{{ dnshub_listen_dns }}", "[::]:53"]
 protocol = ["udp", "tcp"]
 
 [server.tls]
-enabled = true
+enabled = {{ dnshub_tls_enabled | lower }}
 listen = ["{{ dnshub_listen_dot }}", "[::]:853"]
 cert = "{{ dnshub_tls_cert }}"
 key = "{{ dnshub_tls_key }}"
 
 [server.doh]
-enabled = true
+enabled = {{ dnshub_tls_enabled | lower }}
 listen = ["{{ dnshub_listen_doh }}", "[::]:443"]
 path = "{{ dnshub_doh_path }}"
 cert = "{{ dnshub_tls_cert }}"
@@ -29,6 +29,13 @@ router = "{{ dnshub_dhcp_router }}"
 domain = "{{ dnshub_dhcp_domain }}"
 lease_time_hours = {{ dnshub_dhcp_lease_time_hours }}
 ntp_server = "{{ dnshub_dhcp_ntp_server }}"
+
+# PXE / BOOTP / TFTP — network boot support (see PRD 4.4 / config section).
+# The built-in read-only TFTP server serves boot images over UDP port 69.
+[dhcp.pxe.tftp]
+enabled = {{ dnshub_tftp_enabled | default(true) | lower }}
+listen = "{{ dnshub_tftp_listen | default('0.0.0.0:69') }}"
+root_dir = "{{ dnshub_tftp_root_dir | default('/etc/dnshub/tftp') }}"
 
 [cache]
 min_ttl = {{ dnshub_cache_min_ttl }}

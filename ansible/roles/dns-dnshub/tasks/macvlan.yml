@@ -1,0 +1,52 @@
+---
+# tasks/macvlan.yml — create the Docker macvlan network for DHCP L2 access.
+#
+# DHCP (v4 port 67 UDP, v6 port 547 UDP) requires L2 broadcast access,
+# which Docker bridge networking does not provide. macvlan gives dnshub
+# its own MAC address on the physical network. See PRD 4.4 (lines 948-955).
+#
+# The parent interface MUST exist on the host before this role runs. If it
+# does not, the docker_network task will fail with a clear error.
+
+# ---------------------------------------------------------------------------
+# Verify the macvlan parent interface exists on the host.
+# ---------------------------------------------------------------------------
+- name: Verify macvlan parent interface exists on the host
+  ansible.builtin.stat:
+    path: "/sys/class/net/{{ dnshub_macvlan_parent }}"
+  register: _dnshub_macvlan_parent_check
+
+- name: Fail when macvlan parent interface is missing
+  ansible.builtin.fail:
+    msg: >-
+      The macvlan parent interface '{{ dnshub_macvlan_parent }}' does not
+      exist on the host. Configure the physical interface before deploying
+      dnshub (DHCP requires L2 broadcast access). See PRD 4.4.
+  when: not _dnshub_macvlan_parent_check.stat.exists
+
+# ---------------------------------------------------------------------------
+# Create the macvlan Docker network if it does not already exist.
+#
+# `docker_network` is idempotent: when `state: present` it will not recreate
+# an existing network. We guard with a pre-check so a network created out of
+# band (with different options) is not silently overwritten.
+# ---------------------------------------------------------------------------
+- name: Check if macvlan Docker network exists
+  community.docker.docker_network_info:
+    name: "{{ dnshub_network }}"
+  register: _dnshub_macvlan_network
+  ignore_errors: true
+
+- name: Create macvlan Docker network for DHCP L2 access
+  community.docker.docker_network:
+    name: "{{ dnshub_network }}"
+    driver: "{{ dnshub_network_driver }}"
+    state: present
+    ipam_config:
+      - subnet: "{{ dnshub_macvlan_subnet }}"
+        gateway: "{{ dnshub_macvlan_gateway }}"
+        iprange: "{{ dnshub_macvlan_ip_range }}"
+    # macvlan-specific options: the parent interface the macvlan attaches to.
+    driver_options:
+      parent: "{{ dnshub_macvlan_parent }}"
+  when: _dnshub_macvlan_network.failed | default(false)

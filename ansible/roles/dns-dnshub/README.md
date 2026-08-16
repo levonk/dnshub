@@ -8,8 +8,12 @@ NextJS frontend).
 ## Requirements
 
 - Ansible >= 2.14
-- `community.docker` collection (for `docker_container` and `docker_volume`)
-- Docker host with the `localnet-network` network already created
+- `community.docker` collection (for `docker_container`, `docker_volume`,
+  `docker_network`, and `docker_network_info`)
+- Docker host with the `macvlan` driver available (DHCP requires L2
+  broadcast access; see PRD 4.4)
+- A physical interface on the host to use as the macvlan parent
+  (`dnshub_macvlan_parent`, default `eth0`)
 - The `localnet-dns-dnshub` image built and available on the host
   (see the project `Dockerfile` and `build-and-push-images.sh`)
 
@@ -27,12 +31,23 @@ variables defined in the Infrahub inventory (see PRD section 6.2).
 | `dnshub_container_name` | `dnshub` | Container name |
 | `dnshub_restart_policy` | `unless-stopped` | Docker restart policy |
 
-### Network
+### Network — macvlan (DHCP L2 access)
+
+The container is attached to a **macvlan** network so it has its own MAC
+address on the physical LAN. This is required for DHCP (ports 67/547) which
+needs L2 broadcast access; Docker bridge networking does not provide this.
+The role creates the macvlan network if it does not already exist
+(`tasks/macvlan.yml`).
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `dnshub_network` | `localnet-network` | Docker network to attach |
-| `dnshub_ipv4_address` | `infra_network_ip_dns_dnshub` (172.20.255.67) | Static IPv4 on the network |
+| `dnshub_network` | `infra_dhcp_macvlan_name` (`localnet-macvlan`) | macvlan Docker network name |
+| `dnshub_network_driver` | `macvlan` | Docker network driver |
+| `dnshub_ipv4_address` | `infra_dhcp_macvlan_ip` (172.20.255.67) | Static IPv4 on the macvlan network |
+| `dnshub_macvlan_parent` | `infra_dhcp_macvlan_parent` (`eth0`) | Host physical interface (parent) |
+| `dnshub_macvlan_subnet` | `infra_dhcp_macvlan_subnet` (`172.20.255.0/24`) | macvlan subnet |
+| `dnshub_macvlan_gateway` | `infra_dhcp_macvlan_gateway` (`172.20.255.1`) | macvlan gateway |
+| `dnshub_macvlan_ip_range` | `infra_dhcp_macvlan_ip_range` (`172.20.255.64/28`) | IPAM allocation range |
 
 ### Ports (PRD 6.1)
 
@@ -43,6 +58,7 @@ variables defined in the Infrahub inventory (see PRD section 6.2).
 | `dnshub_port_doh_host` / `_container` | 443 | DoH (TCP) |
 | `dnshub_port_dhcp_host` / `_container` | 67 | DHCPv4 (UDP) |
 | `dnshub_port_dhcpv6_host` / `_container` | 547 | DHCPv6 (UDP) |
+| `dnshub_port_tftp_host` / `_container` | 69 | TFTP / PXE (UDP) |
 | `dnshub_port_metrics_host` / `_container` | 9090 | Prometheus metrics |
 | `dnshub_port_frontend_host` / `_container` | 8080 | NextJS frontend + REST API |
 
@@ -52,7 +68,8 @@ variables defined in the Infrahub inventory (see PRD section 6.2).
 |----------|---------|-------------|
 | `dnshub_data_volume` | `infra_storage_dns_dnshub_volume` | Docker named volume for LMDB/SQLite data |
 | `dnshub_config_dir` | `infra_storage_dns_dnshub_config_dir` | Host directory for rendered config files |
-| `dnshub_tls_host_dir` | `/srv/traefik/acme` | Host TLS cert dir (mounted read-only) |
+| `dnshub_tls_host_dir` | `infra_dnshub_tls_cert_dir` (`/srv/traefik/acme`) | Host TLS cert dir (mounted read-only) |
+| `dnshub_tls_enabled` | `true` | Enable DoT/DoH TLS listeners |
 
 ### Config
 
@@ -90,11 +107,15 @@ None.
 
 ## Notes
 
-- DHCP (port 67/547) requires L2 broadcast access. On a standard Docker
-  bridge network this will not work — use macvlan or host networking.
-  Macvlan setup is handled in story 04-012.
+- DHCP (port 67/547) requires L2 broadcast access. The role creates and
+  attaches the container to a **macvlan** Docker network
+  (`tasks/macvlan.yml`) so dnshub has its own MAC on the physical LAN.
+  The host's physical interface must exist as the macvlan parent
+  (`dnshub_macvlan_parent`); the role fails with a clear error if it is
+  missing.
 - TLS certificates are mounted read-only from the Traefik/ACME cert
-  directory on the host. No certs are baked into the image.
+  directory on the host (`dnshub_tls_host_dir`). No certs are baked into
+  the image and no secrets live in the templates.
 - No secrets are stored in the image or templates. Sensitive client
   policy mappings should come from Ansible Vault-encrypted host vars.
 
