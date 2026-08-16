@@ -1,0 +1,13 @@
+apiVersion: 1
+
+providers:
+  - name: dnshub
+    orgId: 1
+    folder: dnshub
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: true
