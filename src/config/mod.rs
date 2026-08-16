@@ -429,6 +429,12 @@ pub struct DhcpConfig {
     /// this instead of the flat fields above.
     #[serde(default)]
     pub v4: crate::dhcp::v4::config::DhcpV4Config,
+
+    /// `[dhcp.v6.ra]` — IPv6 Router Advertisement / SLAAC config
+    /// (story 04-003). When `Some` and `enabled`, the RA sender
+    /// transmits periodic RAs with RDNSS/DNSSL options.
+    #[serde(default)]
+    pub ra: Option<crate::dhcp::ra::RaConfig>,
 }
 
 /// `[rate_limit]` — token bucket rate limiting (story 03-004). Reserved.
