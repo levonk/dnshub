@@ -32,3 +32,5 @@ pub mod mac_blocklist;
 pub mod options;
 pub mod pool_options;
 pub mod ddns;
+pub mod pxe;
+pub mod tftp;

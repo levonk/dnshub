@@ -7,7 +7,7 @@ prd_file: "internal-docs/feature/2026/08/dnshub/feat-202608110000-dnshub.md"
 phase: 4
 parallel_id: 6
 branch: "feature/current/dnshub/story-04-006-pxe-bootp-tftp-server"
-status: "todo"
+status: "done"
 assignee: ""
 reviewer: ""
 dependencies: ["01-004"]
@@ -68,25 +68,25 @@ Implement PXE/BOOTP network boot support: parse PXE DHCP options (option 60 "PXE
 
 ## Sub-Tasks
 
-- [ ] Create src/dhcp/pxe/config.rs with PxeConfig: enabled, proxy_mode (bool), tftp (TftpConfig: enabled, listen, root_dir, allowlist), bootfiles (HashMap<String, String>), ipxe (IpxeConfig: enabled, chain_url), bootp_static (Vec<BootpStaticEntry>) per PRD lines 857-886
+- [x] Create src/dhcp/pxe/config.rs with PxeConfig: enabled, proxy_mode (bool), tftp (TftpConfig: enabled, listen, root_dir, allowlist), bootfiles (HashMap<String, String>), ipxe (IpxeConfig: enabled, chain_url), bootp_static (Vec<BootpStaticEntry>) per PRD lines 857-886
   **Verify**: `cargo build` → exit 0
-- [ ] Create src/dhcp/pxe/bootfile.rs with BootfileMapper: select_bootfile(arch_code: u16) -> Option<String>, map architecture codes (0, 7, 9, 11) to bootfile names from config
+- [x] Create src/dhcp/pxe/bootfile.rs with BootfileMapper: select_bootfile(arch_code: u16) -> Option<String>, map architecture codes (0, 7, 9, 11) to bootfile names from config
   **Verify**: `cargo test --lib dhcp::pxe::bootfile` → all pass (BIOS→pxelinux.0, UEFI→grubx64.efi, unknown→None)
-- [ ] Create src/dhcp/pxe/mod.rs with PxeHandler: is_pxe_request(options) -> bool (check option 60 = "PXEClient"), build_pxe_response(options, bootfile, tftp_server) -> DhcpOptions (options 66, 67, 150)
+- [x] Create src/dhcp/pxe/mod.rs with PxeHandler: is_pxe_request(options) -> bool (check option 60 = "PXEClient"), build_pxe_response(options, bootfile, tftp_server) -> DhcpOptions (options 66, 67, 150)
   **Verify**: `cargo test --lib dhcp::pxe` → all pass (detect PXE request, build response with correct options)
-- [ ] Create src/dhcp/pxe/ipxe.rs with iPXE chainloading: detect iPXE client (option 175), return chain_url in bootfile option
+- [x] Create src/dhcp/pxe/ipxe.rs with iPXE chainloading: detect iPXE client (option 175), return chain_url in bootfile option
   **Verify**: `cargo test --lib dhcp::pxe::ipxe` → all pass (detect iPXE, return chain URL)
-- [ ] Create src/dhcp/pxe/bootp.rs with BOOTP static: lookup_bootp_static(mac) -> Option<(ip, bootfile, tftp_server)>, treat as infinite-lease DHCP
+- [x] Create src/dhcp/pxe/bootp.rs with BOOTP static: lookup_bootp_static(mac) -> Option<(ip, bootfile, tftp_server)>, treat as infinite-lease DHCP
   **Verify**: `cargo test --lib dhcp::pxe::bootp` → all pass (lookup by MAC, return IP and bootfile)
-- [ ] Create src/dhcp/pxe/proxy.rs with PXE proxy mode: provide PXE options without IP allocation (proxy_mode = true)
+- [x] Create src/dhcp/pxe/proxy.rs with PXE proxy mode: provide PXE options without IP allocation (proxy_mode = true)
   **Verify**: `cargo test --lib dhcp::pxe::proxy` → all pass (proxy response has PXE options but no IP lease)
-- [ ] Create src/dhcp/tftp/protocol.rs with TFTP packet types: RRQ, DATA, ACK, ERROR, encode/decode per RFC 1350
+- [x] Create src/dhcp/tftp/protocol.rs with TFTP packet types: RRQ, DATA, ACK, ERROR, encode/decode per RFC 1350
   **Verify**: `cargo test --lib dhcp::tftp::protocol` → all pass (encode/decode each packet type)
-- [ ] Create src/dhcp/tftp/mod.rs with TftpServer: UDP listener on port 69, handle RRQ (read request), serve files from root_dir, enforce allowlist, send DATA blocks, handle ACK, handle ERROR
+- [x] Create src/dhcp/tftp/mod.rs with TftpServer: UDP listener on port 69, handle RRQ (read request), serve files from root_dir, enforce allowlist, send DATA blocks, handle ACK, handle ERROR
   **Verify**: `cargo test --lib dhcp::tftp` → all pass (serve a test file, verify DATA blocks sent)
-- [ ] Update src/config/dhcp.rs with [dhcp.pxe] section
+- [x] Update src/config/dhcp.rs with [dhcp.pxe] section
   **Verify**: `cargo build` → exit 0
-- [ ] Run clippy and fmt
+- [x] Run clippy and fmt
   **Verify**: `cargo clippy -- -D warnings && cargo fmt -- --check` → exit 0
 
 ## Relevant Files
@@ -103,16 +103,16 @@ Implement PXE/BOOTP network boot support: parse PXE DHCP options (option 60 "PXE
 
 ## Acceptance Criteria
 
-- [ ] PXE requests (option 60 = "PXEClient") are detected
-- [ ] Bootfile is selected based on client architecture (option 93)
-- [ ] PXE response includes options 66 (TFTP server), 67 (bootfile), 150 (TFTP server address)
-- [ ] iPXE chainloading returns chain URL for HTTP-based boot
-- [ ] BOOTP static entries (MAC → IP → bootfile) work
-- [ ] PXE proxy mode provides PXE info without IP allocation
-- [ ] TFTP server serves files from configured root directory
-- [ ] TFTP server enforces file allowlist
-- [ ] TFTP protocol (RRQ, DATA, ACK, ERROR) works per RFC 1350
-- [ ] All tests pass, clippy clean, fmt clean
+- [x] PXE requests (option 60 = "PXEClient") are detected
+- [x] Bootfile is selected based on client architecture (option 93)
+- [x] PXE response includes options 66 (TFTP server), 67 (bootfile), 150 (TFTP server address)
+- [x] iPXE chainloading returns chain URL for HTTP-based boot
+- [x] BOOTP static entries (MAC → IP → bootfile) work
+- [x] PXE proxy mode provides PXE info without IP allocation
+- [x] TFTP server serves files from configured root directory
+- [x] TFTP server enforces file allowlist
+- [x] TFTP protocol (RRQ, DATA, ACK, ERROR) works per RFC 1350
+- [x] All tests pass, clippy clean, fmt clean
 
 ## Test Plan
 
@@ -144,9 +144,9 @@ Implement PXE/BOOTP network boot support: parse PXE DHCP options (option 60 "PXE
 
 ## Definition of Done
 
-- [ ] All verification commands from sub-tasks pass
-- [ ] Code, tests, docs updated; CI green
-- [ ] No files outside in-scope list are modified (`git status`)
+- [x] All verification commands from sub-tasks pass
+- [x] Code, tests, docs updated; CI green
+- [x] No files outside in-scope list are modified (`git status`)
 
 ## STOP Conditions
 
@@ -170,3 +170,4 @@ Stop and report if:
 ## Changelog
 
 - 2026-08-16: initialized story file
+- 2026-08-16: implemented PXE/BOOTP/TFTP server — PxeHandler with per-architecture bootfile mapping (option 93), iPXE chainloading (option 175/user-class), BOOTP static entries, PXE proxy mode, RFC 1350 TFTP server (read-only, allowlist, path-traversal protection), PxeConfig wired into [dhcp.pxe] config section. 71 unit tests added, all passing.

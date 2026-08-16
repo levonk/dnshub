@@ -79,6 +79,10 @@ pub struct DhcpConfig {
     /// transmits periodic RAs with RDNSS/DNSSL options.
     #[serde(default)]
     pub ra: Option<crate::dhcp::ra::RaConfig>,
+
+    /// `[dhcp.pxe]` — PXE/BOOTP/TFTP network boot config (story 04-006).
+    #[serde(default)]
+    pub pxe: Option<crate::dhcp::pxe::config::PxeConfig>,
 }
 
 /// `[[dhcp.pools]]` — a single IP pool with its own options and lease time.
@@ -416,3 +420,5 @@ lease_time_hours = 1
         assert!(cfg.static_leases.is_empty());
     }
 }
+
+pub use crate::dhcp::pxe::config::PxeConfig;
