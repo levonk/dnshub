@@ -31,9 +31,13 @@
 pub mod caching;
 pub mod ecs_strip;
 pub mod forwarding;
+pub mod rate_limit;
 pub mod serve_stale;
 pub mod tiered_forward;
 pub mod server;
+pub mod token_bucket;
+
+pub use rate_limit::RateLimitHandler;
 
 use async_trait::async_trait;
 use hickory_net::runtime::Time;
@@ -140,6 +144,22 @@ impl DnshubHandler {
     /// short-circuit blocked queries early.
     pub fn with_middleware_front(mut self, mw: Box<dyn DnsMiddleware>) -> Self {
         self.middleware.insert(0, mw);
+        self
+    }
+
+    /// Prepend a [`RateLimitHandler`](crate::dns::RateLimitHandler) to the
+    /// front of the middleware chain.
+    ///
+    /// Rate limiting runs first (before policy) so that clients exceeding
+    /// their token budget are refused before any policy or forwarding work
+    /// is done. When `requests_per_second` is `0` the handler is a no-op,
+    /// so it is always safe to install.
+    pub fn with_rate_limit(
+        mut self,
+        config: &crate::config::RateLimitConfig,
+    ) -> Self {
+        let handler = RateLimitHandler::from_config(config);
+        self.middleware.insert(0, Box::new(handler));
         self
     }
 
