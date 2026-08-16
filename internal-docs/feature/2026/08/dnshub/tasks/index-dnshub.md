@@ -36,7 +36,7 @@
 | 05-001 | Full Prometheus metrics (all labels from PRD section 4.6) | 05 | [~] In-Progress |  | true | 01-003, 02-003 | — | metrics, prometheus | feature/current/dnshub/story-05-001-full-prometheus-metrics |
 | 05-002 | tracing JSON logs to Loki + Jaeger traces | 05 | [~] In-Progress |  | true | 01-001 | — | observability, tracing, jaeger | feature/current/dnshub/story-05-002-tracing-json-jaeger |
 | 05-003 | Query log SQLite ring buffer + QueryLogHandler | 05 | [~] In-Progress |  | true | 01-001 | — | query-log, sqlite | feature/current/dnshub/story-05-003-query-log-sqlite-ring-buffer |
-| 05-004 | REST API (axum, all endpoints from PRD section 4.9) | 05 | [ ] Todo |  | true | 01-001, 04-001, 04-002 | — | api, axum | feature/current/dnshub/story-05-004-rest-api-axum |
+| 05-004 | REST API (axum, all endpoints from PRD section 4.9) | 05 | [~] In-Progress |  | true | 01-001, 04-001, 04-002 | — | api, axum | feature/current/dnshub/story-05-004-rest-api-axum |
 | 05-005 | Grafana dashboard (metrics + Loki logs) | 05 | [~] In-Progress |  | true | 01-003 | — | observability, grafana | feature/current/dnshub/story-05-005-grafana-dashboard |
 | 05-006 | NextJS frontend (config + status + DHCP + query log viewer) | 05 | [~] In-Progress |  | true | — | — | frontend, nextjs | feature/current/dnshub/story-05-006-nextjs-frontend |
 | 06-001 | Performance tuning (SO_REUSEPORT, buffer sizes) | 06 | [~] In-Progress |  | true | 01-001 | — | dns-server, performance | feature/current/dnshub/story-06-001-performance-tuning-so-reuseport |
