@@ -192,6 +192,22 @@ fn validate_server(server: &super::ServerConfig, errors: &mut Vec<String>) {
             }
         }
     }
+
+    // Performance tuning (story 06-001).
+    if server.udp_buffer_size == 0 {
+        errors.push("[server].udp_buffer_size must be greater than 0".to_string());
+    }
+    if server.tcp_buffer_size == 0 {
+        errors.push("[server].tcp_buffer_size must be greater than 0".to_string());
+    }
+    if server.max_tcp_connections == 0 {
+        errors.push("[server].max_tcp_connections must be greater than 0".to_string());
+    }
+    if let Some(ka) = server.tcp_keepalive_secs {
+        if ka == 0 {
+            errors.push("[server].tcp_keepalive_secs must be greater than 0 when set".to_string());
+        }
+    }
 }
 
 fn validate_cache(cache: &super::CacheConfig, errors: &mut Vec<String>) {
@@ -545,6 +561,138 @@ mod tests {
         assert!(
             errs.iter().any(|e| e.contains("bloom_fpr")),
             "expected bloom_fpr error, got {errs:?}"
+        );
+    }
+
+    // -- Performance config validation (story 06-001) --
+
+    #[test]
+    fn zero_udp_buffer_size_fails() {
+        let mut cfg = valid_minimal_config();
+        cfg.server.udp_buffer_size = 0;
+        let errs = validate_config(&cfg).expect_err("zero udp_buffer_size should fail");
+        assert!(
+            errs.iter().any(|e| e.contains("udp_buffer_size")),
+            "expected udp_buffer_size error, got {errs:?}"
+        );
+    }
+
+    #[test]
+    fn zero_tcp_buffer_size_fails() {
+        let mut cfg = valid_minimal_config();
+        cfg.server.tcp_buffer_size = 0;
+        let errs = validate_config(&cfg).expect_err("zero tcp_buffer_size should fail");
+        assert!(
+            errs.iter().any(|e| e.contains("tcp_buffer_size")),
+            "expected tcp_buffer_size error, got {errs:?}"
+        );
+    }
+
+    #[test]
+    fn zero_max_tcp_connections_fails() {
+        let mut cfg = valid_minimal_config();
+        cfg.server.max_tcp_connections = 0;
+        let errs = validate_config(&cfg).expect_err("zero max_tcp_connections should fail");
+        assert!(
+            errs.iter().any(|e| e.contains("max_tcp_connections")),
+            "expected max_tcp_connections error, got {errs:?}"
+        );
+    }
+
+    #[test]
+    fn zero_tcp_keepalive_secs_fails() {
+        let mut cfg = valid_minimal_config();
+        cfg.server.tcp_keepalive_secs = Some(0);
+        let errs = validate_config(&cfg).expect_err("zero tcp_keepalive_secs should fail");
+        assert!(
+            errs.iter().any(|e| e.contains("tcp_keepalive_secs")),
+            "expected tcp_keepalive_secs error, got {errs:?}"
+        );
+    }
+
+    #[test]
+    fn valid_performance_config_passes() {
+        let mut cfg = valid_minimal_config();
+        cfg.server.reuse_port = true;
+        cfg.server.udp_buffer_size = 4 * 1024 * 1024;
+        cfg.server.tcp_buffer_size = 256 * 1024;
+        cfg.server.max_tcp_connections = 500;
+        cfg.server.tcp_keepalive_secs = Some(60);
+        validate_config(&cfg).expect("valid performance config should pass");
+    }
+
+    #[test]
+    fn performance_config_toml_parsing() {
+        let toml = r#"
+[[upstreams]]
+name = "test"
+address = "1.1.1.1:53"
+protocol = "udp"
+timeout_ms = 1000
+tier = 1
+
+[server]
+reuse_port = false
+udp_buffer_size = 2097152
+tcp_buffer_size = 131072
+max_tcp_connections = 200
+tcp_keepalive_secs = 120
+
+[metrics]
+listen = "0.0.0.0:9090"
+path = "/metrics"
+
+[logging]
+level = "info"
+format = "json"
+"#;
+        let config: DnshubConfig = toml::from_str(toml).expect("TOML should parse");
+        assert!(!config.server.reuse_port);
+        assert_eq!(config.server.udp_buffer_size, 2_097_152);
+        assert_eq!(config.server.tcp_buffer_size, 131_072);
+        assert_eq!(config.server.max_tcp_connections, 200);
+        assert_eq!(config.server.tcp_keepalive_secs, Some(120));
+        validate_config(&config).expect("parsed config should validate");
+    }
+
+    #[test]
+    fn performance_config_defaults_when_omitted() {
+        let toml = r#"
+[[upstreams]]
+name = "test"
+address = "1.1.1.1:53"
+protocol = "udp"
+timeout_ms = 1000
+tier = 1
+
+[metrics]
+listen = "0.0.0.0:9090"
+path = "/metrics"
+
+[logging]
+level = "info"
+format = "json"
+"#;
+        let config: DnshubConfig = toml::from_str(toml).expect("TOML should parse");
+        // Defaults from serde default functions.
+        assert!(config.server.reuse_port, "reuse_port should default to true");
+        assert_eq!(
+            config.server.udp_buffer_size,
+            4 * 1024 * 1024,
+            "udp_buffer_size should default to 4 MiB"
+        );
+        assert_eq!(
+            config.server.tcp_buffer_size,
+            256 * 1024,
+            "tcp_buffer_size should default to 256 KiB"
+        );
+        assert_eq!(
+            config.server.max_tcp_connections, 1000,
+            "max_tcp_connections should default to 1000"
+        );
+        assert!(
+            config.server.tcp_keepalive_secs.is_none(),
+            "tcp_keepalive_secs should default to None"
         );
     }
 }

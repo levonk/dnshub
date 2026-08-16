@@ -61,14 +61,15 @@ async fn main() {
 
     // Start the server on the configured listen addresses.
     let mut server = DnshubServer::new(handler);
-    for addr in &config_store.load_full().server.listen {
+    let active_config = config_store.load_full();
+    for addr in &active_config.server.listen {
         // Register UDP first (the primary DNS transport).
-        if let Err(e) = server.register_udp(addr).await {
+        if let Err(e) = server.register_udp(addr, &active_config.server).await {
             error!(addr = %addr, error = %e, "failed to bind UDP listener");
             process::exit(1);
         }
         // Then TCP (for large responses / zone transfers).
-        if let Err(e) = server.register_tcp(addr).await {
+        if let Err(e) = server.register_tcp(addr, &active_config.server).await {
             error!(addr = %addr, error = %e, "failed to bind TCP listener");
             process::exit(1);
         }

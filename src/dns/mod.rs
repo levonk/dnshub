@@ -33,6 +33,7 @@ pub mod ecs_strip;
 pub mod forwarding;
 pub mod rate_limit;
 pub mod serve_stale;
+pub mod socket;
 pub mod tiered_forward;
 pub mod server;
 pub mod token_bucket;
