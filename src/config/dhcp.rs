@@ -87,6 +87,14 @@ pub struct DhcpConfig {
     /// `[dhcp.relay]` — DHCP relay agent config (story 04-007).
     #[serde(default)]
     pub relay: crate::dhcp::relay::config::RelayConfig,
+
+    /// `[dhcp.audit]` — lease audit log config (story 04-008).
+    #[serde(default)]
+    pub audit: crate::dhcp::audit::AuditConfig,
+
+    /// `[dhcp.rogue_detection]` — rogue DHCP server detection (story 04-008).
+    #[serde(default)]
+    pub rogue_detection: crate::dhcp::rogue::RogueConfig,
 }
 
 /// `[[dhcp.pools]]` — a single IP pool with its own options and lease time.

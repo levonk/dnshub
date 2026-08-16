@@ -35,3 +35,5 @@ pub mod ddns;
 pub mod pxe;
 pub mod tftp;
 pub mod relay;
+pub mod audit;
+pub mod rogue;
