@@ -1,6 +1,54 @@
 # dnshub
 
-DNS hub service
+A Rust DNS orchestration service designed to replace the glue layer currently
+spread across AdGuard Home, dnsdist, and CoreDNS. Built on Hickory DNS with
+Tokio, dnshub consolidates blocklists, rate limiting, ECS stripping, caching,
+ordered upstream fallback, per-client policy, DHCP, DoT/DoH, and observability
+into a single service.
+
+## Features
+
+- **DNS serving** — UDP/TCP on port 53, DoT on 853, DoH on 443
+- **DHCP** — DHCPv4, DHCPv6 (IA_NA), RA/SLAAC, PXE/BOOTP/TFTP, relay agent
+- **Blocklists** — LMDB + Bloom filter storage, hosts/domains/Adblock Plus parsers,
+  categorized sources, hot-swap, circuit breaker, cached boot
+- **Policy** — Per-client profiles via DHCP lease identity, custom allow/block,
+  category-based filtering
+- **Forwarding** — Tiered upstream fallback with per-tier timeouts, serve-stale
+  caching (RFC 8767), ECS stripping
+- **Rate limiting** — Token bucket per-client and global
+- **Observability** — Prometheus metrics, structured JSON tracing, Grafana
+  dashboards, SQLite query log ring buffer
+- **REST API** — axum-based API for config, status, DHCP leases, blocklists,
+  query log, audit events
+- **Frontend** — Static-export NextJS dashboard
+- **Config** — TOML-based with SIGHUP hot-reload
+- **Deployment** — Dockerfile with macvlan networking, Ansible role, migration
+  tooling from existing DNS stack
+
+## Architecture
+
+```
+src/
+├── dns/           # Hickory DNS server, middleware chain, DoT/DoH
+├── dhcp/          # DHCPv4/v6 servers, RA, PXE, relay, DDNS, audit
+├── blocklist/     # LMDB storage, Bloom filter, daemon, health tracking
+├── policy/        # Policy engine, client resolver, profiles
+├── config/        # TOML config loading, validation, hot-reload
+├── metrics/       # Prometheus counters, gauges, histograms
+├── observability/ # Tracing (Jaeger/OTLP), structured logging
+├── query_log/     # SQLite ring buffer for recent queries
+├── api/           # axum REST API server
+├── client_resolver/ # IP → client identity resolution
+└── frontend/      # NextJS static-export frontend
+```
+
+## Status
+
+All 35 stories across 6 phases implemented and merged. 843 tests passing.
+
+See `internal-docs/feature/2026/08/dnshub/` for the PRD, task index, and
+blocker report.
 
 ## Development
 
