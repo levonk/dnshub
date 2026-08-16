@@ -13,7 +13,7 @@
 //! | `metrics`   | 01-003       | TODO: implemented in later stories |
 //! | `policy`    | 02-001       | per-client policy engine + handler (this story) |
 //! | `client_resolver` | 02-001 | client IP → profile resolution (this story) |
-//! | `dhcp`      | 04-001       | TODO: implemented in later stories |
+//! | `dhcp`      | 04-001       | DHCPv4 server core (this story) |
 //! | `query_log` | 05-003       | TODO: implemented in later stories |
 //! | `api`       | 05-004       | TODO: implemented in later stories |
 //! | `frontend`  | 05-006       | TODO: implemented in later stories |
@@ -29,7 +29,7 @@ pub mod metrics;
 pub mod policy;
 // Client IP → policy profile resolution (story 02-001).
 pub mod client_resolver;
-// TODO: implemented in later stories
+// DHCPv4 server core (story 04-001).
 pub mod dhcp;
 // TODO: implemented in later stories
 pub mod query_log;
