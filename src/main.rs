@@ -12,6 +12,7 @@
 use dnshub::config::{
     ConfigStore, DnshubConfig, HotReloadManager, HotReloadPaths, UpstreamConfig,
 };
+use dnshub::dns::doh::DohServer;
 use dnshub::dns::dot::{DotServer, log_tls_load_error};
 use dnshub::dns::forwarding::ForwardingHandler;
 use dnshub::dns::server::DnshubServer;
@@ -62,7 +63,8 @@ async fn main() {
 
     // Start the server on the configured listen addresses.
     let mut server = DnshubServer::new(handler);
-    for addr in &config_store.load_full().server.listen {
+    let config_snapshot = config_store.load_full();
+    for addr in &config_snapshot.server.listen {
         // Register UDP first (the primary DNS transport).
         if let Err(e) = server.register_udp(addr).await {
             error!(addr = %addr, error = %e, "failed to bind UDP listener");
@@ -80,7 +82,7 @@ async fn main() {
     // Traefik/ACME certs mounted into the container — PRD §4.7). DoT clients
     // are served by the same DnshubHandler as UDP/TCP, so per-client policy,
     // blocklists, and forwarding apply identically.
-    if let Some(tls) = &config_store.load_full().server.tls {
+    if let Some(tls) = &config_snapshot.server.tls {
         if tls.enabled {
             match DotServer::from_config(tls) {
                 Ok(dot) => match server.register_tls(&dot).await {
@@ -102,6 +104,31 @@ async fn main() {
             }
         } else {
             info!("[server.tls].enabled is false — DoT server disabled");
+        }
+    }
+
+    // Start the DoH (DNS-over-HTTPS) server when [server.doh].enabled = true.
+    // The DoH HTTPS listeners are attached to the same hickory-server `Server`
+    // so they share the DnshubHandler (same policy, blocklists, forwarding).
+    if let Some(doh_cfg) = &config_snapshot.server.doh {
+        if doh_cfg.enabled {
+            match DohServer::new(doh_cfg, config_snapshot.server.tls.as_ref()) {
+                Ok(doh) => match server.register_doh(&doh).await {
+                    Ok(addrs) => {
+                        for a in &addrs {
+                            info!(addr = %a, path = %doh.path(), "DoH server listening");
+                        }
+                    }
+                    Err(e) => {
+                        error!(error = %e, "failed to register DoH listener");
+                        process::exit(1);
+                    }
+                },
+                Err(e) => {
+                    error!(error = %e, "failed to build DoH server");
+                    process::exit(1);
+                }
+            }
         }
     }
 

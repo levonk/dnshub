@@ -623,3 +623,4 @@ mod tests {
         assert_eq!(info.response_code, ResponseCode::NoError);
     }
 }
+pub mod doh;

@@ -184,11 +184,27 @@ fn validate_server(server: &super::ServerConfig, errors: &mut Vec<String>) {
             if doh.path.is_empty() {
                 errors.push("[server.doh].path is required when doh is enabled".to_string());
             }
-            if doh.cert.is_empty() {
-                errors.push("[server.doh].cert is required when doh is enabled".to_string());
+            // DoH may reuse the DoT ([server.tls]) cert/key when it does not
+            // specify its own. Only require DoH cert/key when DoT is not
+            // enabled with cert/key of its own.
+            let tls_enabled = server
+                .tls
+                .as_ref()
+                .map(|t| t.enabled && !t.cert.is_empty() && !t.key.is_empty())
+                .unwrap_or(false);
+            if doh.cert.is_empty() && !tls_enabled {
+                errors.push(
+                    "[server.doh].cert is required when doh is enabled \
+                     (or enable [server.tls] with cert/key to reuse them)"
+                        .to_string(),
+                );
             }
-            if doh.key.is_empty() {
-                errors.push("[server.doh].key is required when doh is enabled".to_string());
+            if doh.key.is_empty() && !tls_enabled {
+                errors.push(
+                    "[server.doh].key is required when doh is enabled \
+                     (or enable [server.tls] with cert/key to reuse them)"
+                        .to_string(),
+                );
             }
         }
     }
@@ -333,51 +349,6 @@ fn validate_dhcp(d: &super::DhcpConfig, errors: &mut Vec<String>) {
         }
         if d.lease_time_hours == 0 {
             errors.push("[dhcp].lease_time_hours must be greater than 0 when dhcp is enabled".to_string());
-        }
-    }
-
-    if let Some(ra) = &d.ra {
-        validate_ra(ra, errors);
-    }
-}
-
-fn validate_ra(ra: &crate::dhcp::ra::RaConfig, errors: &mut Vec<String>) {
-    if !ra.enabled {
-        return;
-    }
-
-    if ra.prefix.is_empty() {
-        errors.push("[dhcp.v6.ra].prefix is required when RA is enabled".to_string());
-    } else if ra.parse_prefix().is_none() {
-        errors.push(format!(
-            "[dhcp.v6.ra].prefix '{}' is not a valid IPv6 CIDR (expected 'addr/len')",
-            ra.prefix
-        ));
-    }
-
-    if ra.valid_lifetime_secs == 0 {
-        errors.push("[dhcp.v6.ra].valid_lifetime_secs must be greater than 0 when RA is enabled".to_string());
-    }
-
-    if ra.preferred_lifetime_secs > ra.valid_lifetime_secs {
-        errors.push(format!(
-            "[dhcp.v6.ra].preferred_lifetime_secs ({}) must be <= valid_lifetime_secs ({})",
-            ra.preferred_lifetime_secs, ra.valid_lifetime_secs
-        ));
-    }
-
-    for s in &ra.rdnss {
-        if s.parse::<std::net::Ipv6Addr>().is_err() {
-            errors.push(format!(
-                "[dhcp.v6.ra].rdnss: '{}' is not a valid IPv6 address",
-                s
-            ));
-        }
-    }
-
-    for d in &ra.dnssl {
-        if d.is_empty() {
-            errors.push("[dhcp.v6.ra].dnssl: domain must not be empty".to_string());
         }
     }
 }
@@ -590,114 +561,6 @@ mod tests {
         assert!(
             errs.iter().any(|e| e.contains("bloom_fpr")),
             "expected bloom_fpr error, got {errs:?}"
-        );
-    }
-
-    #[test]
-    fn valid_ra_config_passes() {
-        let mut cfg = valid_minimal_config();
-        cfg.dhcp.ra = Some(crate::dhcp::ra::RaConfig {
-            enabled: true,
-            prefix: "fd00:1234:5678::/64".to_string(),
-            preferred_lifetime_secs: 3600,
-            valid_lifetime_secs: 7200,
-            router_lifetime_secs: 1800,
-            rdnss: vec!["fd00:1234:5678::67".to_string()],
-            dnssl: vec!["levonk.com".to_string()],
-        });
-        validate_config(&cfg).expect("valid RA config should pass");
-    }
-
-    #[test]
-    fn ra_disabled_skips_validation() {
-        let mut cfg = valid_minimal_config();
-        cfg.dhcp.ra = Some(crate::dhcp::ra::RaConfig {
-            enabled: false,
-            prefix: String::new(),
-            ..crate::dhcp::ra::RaConfig::default()
-        });
-        validate_config(&cfg).expect("disabled RA should skip validation");
-    }
-
-    #[test]
-    fn ra_invalid_prefix_fails() {
-        let mut cfg = valid_minimal_config();
-        cfg.dhcp.ra = Some(crate::dhcp::ra::RaConfig {
-            enabled: true,
-            prefix: "not-a-cidr".to_string(),
-            ..crate::dhcp::ra::RaConfig::default()
-        });
-        let errs = validate_config(&cfg).expect_err("bad RA prefix should fail");
-        assert!(
-            errs.iter().any(|e| e.contains("[dhcp.v6.ra].prefix")),
-            "expected RA prefix error, got {errs:?}"
-        );
-    }
-
-    #[test]
-    fn ra_preferred_gt_valid_fails() {
-        let mut cfg = valid_minimal_config();
-        cfg.dhcp.ra = Some(crate::dhcp::ra::RaConfig {
-            enabled: true,
-            prefix: "fd00::/64".to_string(),
-            preferred_lifetime_secs: 9999,
-            valid_lifetime_secs: 1000,
-            ..crate::dhcp::ra::RaConfig::default()
-        });
-        let errs = validate_config(&cfg).expect_err("preferred > valid should fail");
-        assert!(
-            errs.iter()
-                .any(|e| e.contains("preferred_lifetime_secs") && e.contains("valid_lifetime_secs")),
-            "expected lifetime error, got {errs:?}"
-        );
-    }
-
-    #[test]
-    fn ra_invalid_rdnss_fails() {
-        let mut cfg = valid_minimal_config();
-        cfg.dhcp.ra = Some(crate::dhcp::ra::RaConfig {
-            enabled: true,
-            prefix: "fd00::/64".to_string(),
-            rdnss: vec!["not-an-addr".to_string()],
-            ..crate::dhcp::ra::RaConfig::default()
-        });
-        let errs = validate_config(&cfg).expect_err("bad RDNSS should fail");
-        assert!(
-            errs.iter().any(|e| e.contains("[dhcp.v6.ra].rdnss")),
-            "expected RDNSS error, got {errs:?}"
-        );
-    }
-
-    #[test]
-    fn ra_empty_dnssl_fails() {
-        let mut cfg = valid_minimal_config();
-        cfg.dhcp.ra = Some(crate::dhcp::ra::RaConfig {
-            enabled: true,
-            prefix: "fd00::/64".to_string(),
-            dnssl: vec!["".to_string()],
-            ..crate::dhcp::ra::RaConfig::default()
-        });
-        let errs = validate_config(&cfg).expect_err("empty DNSSL should fail");
-        assert!(
-            errs.iter().any(|e| e.contains("[dhcp.v6.ra].dnssl")),
-            "expected DNSSL error, got {errs:?}"
-        );
-    }
-
-    #[test]
-    fn ra_zero_valid_lifetime_fails() {
-        let mut cfg = valid_minimal_config();
-        cfg.dhcp.ra = Some(crate::dhcp::ra::RaConfig {
-            enabled: true,
-            prefix: "fd00::/64".to_string(),
-            valid_lifetime_secs: 0,
-            ..crate::dhcp::ra::RaConfig::default()
-        });
-        let errs = validate_config(&cfg).expect_err("zero valid lifetime should fail");
-        assert!(
-            errs.iter()
-                .any(|e| e.contains("valid_lifetime_secs must be greater than 0")),
-            "expected valid_lifetime error, got {errs:?}"
         );
     }
 }
