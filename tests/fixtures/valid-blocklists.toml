@@ -1,0 +1,79 @@
+# Valid blocklists.toml fixture — mirrors the PRD section 4.10 example
+# (lines 1480-1558). Used by blocklists loading/round-trip tests.
+
+[[sources]]
+name = "easylist"
+url = "https://easylist.to/easylist/easylist.txt"
+format = "adblock"
+categories = ["ads"]
+refresh_hours = 96  # 4 days
+
+[[sources]]
+name = "easyprivacy"
+url = "https://easylist.to/easylist/easyprivacy.txt"
+format = "adblock"
+categories = ["tracker"]
+refresh_hours = 96
+
+[[sources]]
+name = "hagezi-normal"
+url = "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/domains-normal.txt"
+format = "domains"
+categories = ["ads", "tracker", "malware"]
+refresh_hours = 24
+
+[[sources]]
+name = "hagezi-tif"
+url = "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/domains-tif-medium.txt"
+format = "domains"
+categories = ["malware", "phishing"]
+refresh_hours = 6
+
+[[sources]]
+name = "urlhaus"
+url = "https://urlhaus.abuse.ch/downloads/hostfile/"
+format = "hosts"
+categories = ["malware"]
+refresh_minutes = 15
+
+[[sources]]
+name = "stevenblack-porn"
+url = "https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/porn/hosts"
+format = "hosts"
+categories = ["adult"]
+refresh_hours = 24
+
+[[sources]]
+name = "stevenblack-gambling"
+url = "https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/gambling/hosts"
+format = "hosts"
+categories = ["gambling"]
+refresh_hours = 24
+
+[[sources]]
+name = "stevenblack-social"
+url = "https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/social/hosts"
+format = "hosts"
+categories = ["social"]
+refresh_hours = 24
+
+[[sources]]
+name = "stevenblack-fakenews"
+url = "https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/fakenews/hosts"
+format = "hosts"
+categories = ["fakenews"]
+refresh_hours = 24
+
+[[sources]]
+name = "ipfire-gambling"
+url = "https://www.ipfire.org/dnsbl/gambling/domains"
+format = "domains"
+categories = ["gambling"]
+refresh_hours = 24
+
+# Storage
+[storage]
+type = "lmdb"
+path = "/var/lib/dnshub/blocklists.lmdb"
+bloom_filter = true
+bloom_fpr = 0.001  # 0.1% false positive rate

@@ -1,0 +1,43 @@
+# Invalid dnshub.toml fixture — exercises multiple validation failures:
+#   - no [[upstreams]] entries (required)
+#   - [server].listen has a malformed address
+#   - [server].protocol has an unsupported value
+#   - [cache].min_ttl > max_ttl
+#   - [logging].level is not a valid level
+#   - [tracing] enabled with out-of-range sample_rate and empty endpoint
+#   - [frontend] enabled with empty static_dir
+
+[server]
+listen = ["0.0.0.0:53", "not-a-socket-addr"]
+protocol = ["udp", "quic"]
+
+[cache]
+min_ttl = 9999
+max_ttl = 10
+max_entries = 0
+
+[rate_limit]
+requests_per_second = 0
+burst = 200
+
+[query_log]
+enabled = true
+max_entries = 0
+
+[metrics]
+listen = "not-a-socket"
+path = ""
+
+[logging]
+level = "verbose"
+format = "xml"
+
+[tracing]
+enabled = true
+endpoint = ""
+sample_rate = 5.0
+
+[frontend]
+enabled = true
+listen = "0.0.0.0:8080"
+static_dir = ""

@@ -1,0 +1,34 @@
+# Invalid blocklists.toml fixture — exercises multiple validation failures:
+#   - duplicate source name
+#   - missing url
+#   - unsupported format
+#   - missing refresh interval
+#   - zero refresh interval
+#   - unsupported storage type
+#   - bloom_fpr out of range
+
+[[sources]]
+name = "dup"
+url = "https://example.com/a.txt"
+format = "domains"
+categories = ["ads"]
+refresh_hours = 24
+
+[[sources]]
+name = "dup"
+url = ""
+format = "csv"
+categories = []
+refresh_hours = 0
+
+[[sources]]
+name = "no-refresh"
+url = "https://example.com/c.txt"
+format = "hosts"
+categories = ["malware"]
+
+[storage]
+type = "redis"
+path = ""
+bloom_filter = true
+bloom_fpr = 2.0
