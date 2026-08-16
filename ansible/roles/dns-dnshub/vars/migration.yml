@@ -1,0 +1,92 @@
+---
+# vars/migration.yml — migration variables for the dns-dnshub role.
+#
+# These variables drive the migration playbook (ansible/migrate-to-dnshub.yml)
+# and the migration tasks (tasks/migrate.yml). They follow the IP allocation
+# in PRD section 6.1 (lines 1614-1631) and the migration plan in PRD section
+# 6.3 (lines 1687-1694).
+#
+# Override any of these via inventory group/host vars when the on-prem
+# allocation differs from the defaults below.
+
+# ---------------------------------------------------------------------------
+# Temporary IP for the parallel-deployment phase (PRD 6.3 step 1).
+#
+# dnshub is deployed alongside the existing stack on a different IP so the
+# old services keep serving while dnshub is verified. This IP must be free
+# on the localnet-network and must NOT collide with the old service IPs.
+# ---------------------------------------------------------------------------
+dnshub_migration_temp_ip: "172.20.255.68"
+
+# ---------------------------------------------------------------------------
+# Old service IPs (PRD 6.1 lines 1622-1631).
+#
+#   .67 — AdGuard Home (becomes the final dnshub IP after cutover)
+#   .49 — dnsdist (freed after migration)
+#   .51 — CoreDNS (freed after migration)
+# ---------------------------------------------------------------------------
+dnshub_migration_old_adguard_ip: "172.20.255.67"
+dnshub_migration_old_dnsdist_ip: "172.20.255.49"
+dnshub_migration_old_coredns_ip: "172.20.255.51"
+
+# ---------------------------------------------------------------------------
+# Old container names (used to stop/remove them during cleanup).
+# ---------------------------------------------------------------------------
+dnshub_migration_old_adguard_container: "adguardhome"
+dnshub_migration_old_dnsdist_container: "dnsdist"
+dnshub_migration_old_coredns_container: "coredns"
+
+# ---------------------------------------------------------------------------
+# Final dnshub IP after cutover (PRD 6.3 step 6).
+#
+# dnshub moves from the temp IP to .67 (the former AdGuard IP) once AdGuard
+# is removed. The .49 and .51 IPs are reclaimed (left unused).
+# ---------------------------------------------------------------------------
+dnshub_migration_final_ip: "172.20.255.67"
+
+# ---------------------------------------------------------------------------
+# nftables TPROXY redirect (PRD 6.3 step 4).
+#
+# The existing stack uses an nftables TPROXY rule to redirect client DNS
+# traffic to AdGuard on .67. During cutover the redirect target is switched
+# from AdGuard to dnshub. The table/chain names and mark must match the
+# existing host nftables configuration.
+# ---------------------------------------------------------------------------
+dnshub_migration_nft_table: "tproxy"
+dnshub_migration_nft_chain: "dns-redirect"
+dnshub_migration_nft_mark: "1"
+dnshub_migration_nft_tproxy_port: "53"
+# Path on the host where the rendered nftables ruleset is written before
+# being loaded with `nft -f`.
+dnshub_migration_nft_ruleset_path: "/etc/nftables.d/dnshub-tproxy.nft"
+# Backup path for the previous nftables ruleset (used for rollback).
+dnshub_migration_nft_backup_path: "/etc/nftables.d/adguard-tproxy.backup.nft"
+
+# ---------------------------------------------------------------------------
+# Verification (PRD 6.3 step 2).
+#
+# The verification script (scripts/verify-migration.sh) is run against the
+# dnshub instance after it is deployed on the temp IP. These variables
+# configure the checks.
+# ---------------------------------------------------------------------------
+dnshub_migration_verify_script: "{{ playbook_dir }}/../scripts/verify-migration.sh"
+# A domain expected to resolve (positive check).
+dnshub_migration_verify_domain: "example.com"
+# A domain expected to be blocked (negative check — should return REFUSED).
+dnshub_migration_verify_blocked_domain: "ads.example.com"
+# Expected RCODE for a blocked query.
+dnshub_migration_verify_blocked_rcode: "REFUSED"
+# Test client IP used for per-client policy verification (optional).
+dnshub_migration_verify_test_client: "192.168.1.50"
+
+# ---------------------------------------------------------------------------
+# Rollback safety.
+#
+# Old containers are stopped (not removed) for a retention period so they
+# can be restarted if rollback is needed. Set the retention in hours.
+# ---------------------------------------------------------------------------
+dnshub_migration_old_container_retention_hours: 24
+
+# Whether to remove old containers after the retention period. When false
+# (default), containers are only stopped — manual cleanup is required.
+dnshub_migration_remove_old_containers: false

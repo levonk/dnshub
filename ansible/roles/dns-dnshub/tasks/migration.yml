@@ -1,0 +1,10 @@
+---
+# tasks/migration.yml — thin wrapper around tasks/migrate.yml.
+#
+# This file exists so the migration tasks can be included by either name
+# (the story sub-tasks reference `migration.yml`; the operator-facing
+# playbook references `migrate.yml`). It simply includes the canonical
+# implementation in migrate.yml.
+
+- name: Include canonical migration tasks
+  ansible.builtin.include_tasks: migrate.yml

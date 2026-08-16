@@ -1,0 +1,65 @@
+---
+# migrate-to-dnshub.yml — main migration playbook.
+#
+# Migrates the DNS stack from AdGuard Home + dnsdist + CoreDNS to dnshub,
+# following PRD section 6.3 (lines 1687-1694).
+#
+# Usage:
+#   # Full migration (interactive — prompts before each high-risk step):
+#   ansible-playbook ansible/migrate-to-dnshub.yml -i inventory
+#
+#   # Dry-run (check mode — no changes applied):
+#   ansible-playbook ansible/migrate-to-dnshub.yml -i inventory --check --diff
+#
+#   # Run only the pre-migration checks:
+#   ansible-playbook ansible/migrate-to-dnshub.yml -i inventory --tags precheck
+#
+#   # Deploy dnshub on the temp IP only (no cutover):
+#   ansible-playbook ansible/migrate-to-dnshub.yml -i inventory --tags precheck,deploy,verify
+#
+#   # Cutover only (after deploy+verify already done):
+#   ansible-playbook ansible/migrate-to-dnshub.yml -i inventory --tags switch,cleanup,reclaim
+#
+# Tags:
+#   precheck — run pre-migration checks
+#   deploy   — deploy dnshub on the temporary IP
+#   verify   — run verification (resolution, blocking, metrics, query log)
+#   switch   — back up + switch nftables TPROXY redirect to dnshub
+#   cleanup  — stop old containers (AdGuard, dnsdist, CoreDNS)
+#   reclaim  — move dnshub to the final IP and reclaim old IPs
+#
+# Rollback is manual — see ansible/roles/dns-dnshub/MIGRATION.md.
+
+- name: Migrate DNS stack to dnshub
+  hosts: dns_servers
+  become: true
+  gather_facts: true
+
+  pre_tasks:
+    - name: Confirm migration target host
+      ansible.builtin.debug:
+        msg: >
+          Starting dnshub migration on {{ inventory_hostname }}.
+          dnshub will be deployed on {{ dnshub_migration_temp_ip | default('172.20.255.68') }}
+          and moved to {{ dnshub_migration_final_ip | default('172.20.255.67') }} after cutover.
+          Old stack: AdGuard ({{ dnshub_migration_old_adguard_ip | default('172.20.255.67') }}),
+          dnsdist ({{ dnshub_migration_old_dnsdist_ip | default('172.20.255.49') }}),
+          CoreDNS ({{ dnshub_migration_old_coredns_ip | default('172.20.255.51') }}).
+      tags: always
+
+  roles:
+    # Run the migration tasks from the dns-dnshub role. Using tasks_from
+    # loads the role defaults/vars but runs migrate.yml instead of the
+    # default main.yml (which would deploy on the final IP immediately).
+    - role: dns-dnshub
+      tasks_from: migrate.yml
+      tags: always
+
+  post_tasks:
+    - name: Migration playbook finished
+      ansible.builtin.debug:
+        msg: >
+          Migration playbook complete for {{ inventory_hostname }}.
+          Verify in Grafana/Loki that dnshub metrics and logs are flowing.
+          Old containers are stopped (not removed) for rollback safety.
+      tags: always

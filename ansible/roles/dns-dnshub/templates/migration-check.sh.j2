@@ -1,0 +1,153 @@
+#!/bin/bash
+#
+# migration-check.sh.j2 — pre-migration check script (rendered by Ansible).
+#
+# Run before starting the migration to verify the host is in a known-good
+# state and that all prerequisites are met. Exits non-zero on the first
+# failed check so the operator can fix issues before proceeding.
+#
+# Rendered variables (from vars/migration.yml and defaults/main.yml):
+#   dnshub_migration_temp_ip
+#   dnshub_migration_old_adguard_ip
+#   dnshub_migration_old_dnsdist_ip
+#   dnshub_migration_old_coredns_ip
+#   dnshub_migration_old_adguard_container
+#   dnshub_migration_old_dnsdist_container
+#   dnshub_migration_old_coredns_container
+#   dnshub_network
+#   dnshub_image
+#   dnshub_tag
+#   dnshub_migration_nft_ruleset_path
+#   dnshub_config_dir
+
+set -euo pipefail
+
+TEMP_IP="{{ dnshub_migration_temp_ip }}"
+OLD_ADGUARD_IP="{{ dnshub_migration_old_adguard_ip }}"
+OLD_DNSDIST_IP="{{ dnshub_migration_old_dnsdist_ip }}"
+OLD_COREDNS_IP="{{ dnshub_migration_old_coredns_ip }}"
+OLD_ADGUARD_CONTAINER="{{ dnshub_migration_old_adguard_container }}"
+OLD_DNSDIST_CONTAINER="{{ dnshub_migration_old_dnsdist_container }}"
+OLD_COREDNS_CONTAINER="{{ dnshub_migration_old_coredns_container }}"
+NETWORK="{{ dnshub_network }}"
+IMAGE="{{ dnshub_image }}:{{ dnshub_tag }}"
+NFT_RULESET="{{ dnshub_migration_nft_ruleset_path }}"
+CONFIG_DIR="{{ dnshub_config_dir }}"
+
+PASS=0
+FAIL=0
+
+ok() {
+    echo "  [PASS] $1"
+    PASS=$((PASS + 1))
+}
+
+fail() {
+    echo "  [FAIL] $1"
+    FAIL=$((FAIL + 1))
+}
+
+have() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+echo "=== dnshub pre-migration checks ==="
+echo
+
+# --- Required tools --------------------------------------------------------
+echo "-- Tools"
+have docker && ok "docker CLI available" || fail "docker CLI not found on PATH"
+have nft    && ok "nft (nftables) available" || fail "nft not found on PATH"
+have dig    && ok "dig (bind-tools) available" || fail "dig not found on PATH"
+have curl   && ok "curl available" || fail "curl not found on PATH"
+echo
+
+# --- Docker daemon ---------------------------------------------------------
+echo "-- Docker daemon"
+if have docker; then
+    if docker info >/dev/null 2>&1; then
+        ok "docker daemon reachable"
+    else
+        fail "docker daemon not reachable (docker info failed)"
+    fi
+
+    if docker network inspect "$NETWORK" >/dev/null 2>&1; then
+        ok "Docker network '$NETWORK' exists"
+    else
+        fail "Docker network '$NETWORK' does not exist"
+    fi
+
+    if docker image inspect "$IMAGE" >/dev/null 2>&1; then
+        ok "dnshub image '$IMAGE' present locally"
+    else
+        fail "dnshub image '$IMAGE' not found — build it before migrating"
+    fi
+fi
+echo
+
+# --- Old containers --------------------------------------------------------
+echo "-- Existing stack"
+if have docker; then
+    for c in "$OLD_ADGUARD_CONTAINER" "$OLD_DNSDIST_CONTAINER" "$OLD_COREDNS_CONTAINER"; do
+        if docker inspect "$c" >/dev/null 2>&1; then
+            ok "container '$c' present (will be stopped during cutover)"
+        else
+            fail "container '$c' not found — migration expects the old stack to be running"
+        fi
+    done
+fi
+echo
+
+# --- IP availability -------------------------------------------------------
+echo "-- IP allocation"
+if have docker; then
+    # The temp IP must be free on the network.
+    USED=$(docker network inspect "$NETWORK" \
+           -f '{{ range .Containers }}{{ .IPv4Address }} {{ end }}' 2>/dev/null || true)
+    for ip in "$TEMP_IP" "$OLD_ADGUARD_IP" "$OLD_DNSDIST_IP" "$OLD_COREDNS_IP"; do
+        if echo "$USED" | grep -qw "$ip"; then
+            ok "IP $ip is currently in use on '$NETWORK'"
+        else
+            if [ "$ip" = "$TEMP_IP" ]; then
+                ok "temp IP $ip is free on '$NETWORK'"
+            else
+                fail "old service IP $ip is not currently assigned — stack may already be migrated"
+            fi
+        fi
+    done
+fi
+echo
+
+# --- Config directory ------------------------------------------------------
+echo "-- Config"
+if [ -d "$CONFIG_DIR" ]; then
+    ok "config directory '$CONFIG_DIR' exists"
+else
+    ok "config directory '$CONFIG_DIR' will be created by the role"
+fi
+echo
+
+# --- nftables --------------------------------------------------------------
+echo "-- nftables"
+if have nft; then
+    if nft list ruleset >/dev/null 2>&1; then
+        ok "nftables ruleset readable"
+    else
+        fail "cannot read nftables ruleset (need root?)"
+    fi
+    if [ -d "$(dirname "$NFT_RULESET")" ]; then
+        ok "nftables ruleset directory '$(dirname "$NFT_RULESET")' exists"
+    else
+        fail "nftables ruleset directory '$(dirname "$NFT_RULESET")' missing"
+    fi
+fi
+echo
+
+# --- Summary ---------------------------------------------------------------
+echo "=== Summary: $PASS passed, $FAIL failed ==="
+if [ "$FAIL" -gt 0 ]; then
+    echo "Pre-migration checks FAILED. Resolve the issues above before proceeding."
+    exit 1
+fi
+echo "Pre-migration checks PASSED. Ready to begin migration."
+exit 0
