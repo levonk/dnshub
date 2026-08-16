@@ -19,6 +19,7 @@ use crate::blocklist::{BlocklistError, Result};
 use flate2::read::GzDecoder;
 use std::io::Read;
 use std::sync::Arc;
+use tokio::sync::Notify;
 
 /// Maximum response size: 500 MB. Reject larger downloads.
 const MAX_RESPONSE_SIZE: usize = 500 * 1024 * 1024;
@@ -35,6 +36,10 @@ pub struct BlocklistDaemon {
     /// Expected entry counts per source name (for schema validation).
     /// Populated after the first successful fetch.
     expected_counts: std::sync::Mutex<std::collections::HashMap<String, usize>>,
+    /// Notifier used to wake the [`BlocklistDaemon::run`] loop for an
+    /// immediate, out-of-band refresh (e.g. on SIGHUP via
+    /// [`BlocklistDaemon::trigger_refresh`]).
+    notify: Arc<Notify>,
 }
 
 impl BlocklistDaemon {
@@ -50,6 +55,7 @@ impl BlocklistDaemon {
             hot_swap,
             client,
             expected_counts: std::sync::Mutex::new(std::collections::HashMap::new()),
+            notify: Arc::new(Notify::new()),
         }
     }
 
@@ -64,7 +70,34 @@ impl BlocklistDaemon {
             hot_swap,
             client,
             expected_counts: std::sync::Mutex::new(std::collections::HashMap::new()),
+            notify: Arc::new(Notify::new()),
         }
+    }
+
+    /// Returns the shared [`Notify`] used to trigger an immediate refresh.
+    ///
+    /// The hot-reload manager (story 02-004) holds this so a SIGHUP can
+    /// wake the daemon's [`BlocklistDaemon::run`] loop without holding a
+    /// reference to the daemon itself.
+    pub fn refresh_notify(&self) -> Arc<Notify> {
+        self.notify.clone()
+    }
+
+    /// Trigger an immediate refresh of all sources, bypassing the
+    /// per-source refresh interval.
+    ///
+    /// This signals the [`BlocklistDaemon::run`] loop (via the internal
+    /// [`Notify`]) to perform a `refresh_all` on its next iteration. It
+    /// is safe to call from any thread — the signal is lock-free and
+    /// coalesces if multiple triggers arrive before the loop wakes.
+    ///
+    /// Note: this only has an effect while the daemon's `run` loop is
+    /// active. The actual refresh executes inside the run loop so that
+    /// concurrent refreshes are serialized and never race on the
+    /// hot-swap temp path.
+    pub fn trigger_refresh(&self) {
+        tracing::info!("blocklist refresh triggered (SIGHUP / hot-reload)");
+        self.notify.notify_one();
     }
 
     /// Fetch a single source and return its content as a string.
@@ -294,6 +327,11 @@ impl BlocklistDaemon {
     ///
     /// This runs indefinitely, refreshing each source at its configured
     /// interval. Intended to be spawned as a `tokio::spawn` task.
+    ///
+    /// The loop also wakes on the internal [`Notify`] (signalled by
+    /// [`BlocklistDaemon::trigger_refresh`], e.g. from the SIGHUP
+    /// hot-reload path) to perform an immediate `refresh_all` that
+    /// bypasses the per-source refresh interval.
     pub async fn run(self: Arc<Self>) -> Result<()> {
         // Initial refresh.
         self.refresh_all().await?;
@@ -311,21 +349,37 @@ impl BlocklistDaemon {
             .collect();
 
         loop {
-            // Wait for the shortest interval to fire.
-            tokio::time::sleep(std::time::Duration::from_secs(60)).await;
-
-            // Check each source's timer.
-            for (idx, timer) in timers.iter_mut().enumerate() {
-                timer.tick().await;
-                if idx < self.config.sources.len() {
-                    let source = &self.config.sources[idx];
-                    let source_id = 1u16 << idx.min(15);
-                    if let Err(e) = self.refresh_source(source, source_id).await {
+            // Wait for either the periodic tick or an out-of-band
+            // trigger_refresh() signal (SIGHUP hot-reload).
+            tokio::select! {
+                _ = self.notify.notified() => {
+                    tracing::info!(
+                        "blocklist refresh triggered by signal, \
+                         bypassing refresh interval"
+                    );
+                    if let Err(e) = self.refresh_all().await {
                         tracing::warn!(
-                            source = source.name,
                             error = %e,
-                            "periodic refresh failed"
+                            "triggered blocklist refresh failed, \
+                             serving stale data"
                         );
+                    }
+                }
+                _ = tokio::time::sleep(std::time::Duration::from_secs(60)) => {
+                    // Check each source's timer.
+                    for (idx, timer) in timers.iter_mut().enumerate() {
+                        timer.tick().await;
+                        if idx < self.config.sources.len() {
+                            let source = &self.config.sources[idx];
+                            let source_id = 1u16 << idx.min(15);
+                            if let Err(e) = self.refresh_source(source, source_id).await {
+                                tracing::warn!(
+                                    source = source.name,
+                                    error = %e,
+                                    "periodic refresh failed"
+                                );
+                            }
+                        }
                     }
                 }
             }
@@ -663,5 +717,80 @@ mod tests {
         assert!(store.len().unwrap() > 0);
         assert!(store.is_blocked("ads.example.com"));
         assert!(store.is_blocked("malware.example.org"));
+    }
+
+    #[tokio::test]
+    async fn test_trigger_refresh_signals_notify() {
+        let (daemon, _) = make_daemon(vec![]);
+
+        // Register a waiter before triggering so we observe the permit.
+        let notify = daemon.refresh_notify();
+        let waiter = notify.notified();
+
+        daemon.trigger_refresh();
+
+        // notify_one() stores a permit, so the waiter resolves immediately.
+        tokio::time::timeout(std::time::Duration::from_secs(1), waiter)
+            .await
+            .expect("trigger_refresh should signal the notify within 1s");
+    }
+
+    #[tokio::test]
+    async fn test_trigger_refresh_runs_refresh_all_in_run_loop() {
+        // A mock server that serves a fresh set of domains on each path.
+        let server = MockHttpServer::new(|_| {
+            (
+                200,
+                "text/plain".to_string(),
+                b"ads.example.com\ntracker.example.com\nmalware.example.org".to_vec(),
+            )
+        });
+
+        let (daemon, hot_swap) = make_daemon(vec![SourceConfig {
+            name: "test".to_string(),
+            url: server.url(),
+            format: Format::Domains,
+            categories: vec![],
+            refresh_hours: None,
+            refresh_minutes: None,
+        }]);
+
+        // Spawn the run loop. The initial refresh_all populates the store.
+        let daemon_arc = std::sync::Arc::new(daemon);
+        let run_handle = {
+            let d = daemon_arc.clone();
+            tokio::spawn(async move {
+                // run() loops forever; we ignore its result (it will be
+                // aborted when the test runtime drops).
+                let _ = d.run().await;
+            })
+        };
+
+        // Poll for the initial refresh to land in the store (the daemon
+        // fetches each source twice per refresh_all, which can take a few
+        // hundred ms against the non-blocking mock server).
+        let mut populated = false;
+        for _ in 0..40 {
+            if hot_swap.load().len().unwrap_or(0) > 0 {
+                populated = true;
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+        assert!(
+            populated,
+            "initial refresh should populate the store within 2s"
+        );
+
+        // Trigger an out-of-band refresh and verify the store is still
+        // serving blocked domains afterwards.
+        daemon_arc.trigger_refresh();
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+        let store = hot_swap.load();
+        assert!(store.is_blocked("ads.example.com"));
+        assert!(store.is_blocked("malware.example.org"));
+
+        run_handle.abort();
     }
 }
