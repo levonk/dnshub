@@ -1,0 +1,44 @@
+## Tech Context (Binding Constraint)
+
+This project uses the following tools. Use them, not alternatives.
+
+Project shape: Greenfield Rust service (dnshub) + NextJS static-export
+frontend. The Rust service is the primary artifact; the frontend is a
+secondary artifact under `frontend/` (to be created during execution).
+
+- Package manager (Rust): cargo
+- Package manager (Frontend): pnpm
+- Ad-hoc runner (Node): pnpm dlx (never npx)
+- Ad-hoc runner (Rust): cargo add / cargo binstall -y
+- Build system: cargo (Rust), just (wrapper recipes in justfile),
+  NextJS build (frontend)
+- Test runner: cargo test (Rust), Vitest (frontend)
+- Linter: clippy (Rust, via `cargo clippy`), ESLint antfu (frontend)
+- Formatter: rustfmt (Rust, via `cargo fmt`), prettier + eslint --fix
+  (frontend)
+- Container runtime: Docker (devcontainer present at .devcontainer/)
+- CI/CD: GitHub Actions (to be set up under .github/workflows/)
+- Config format: TOML (dnshub config), JSON (frontend package.json)
+
+System tools run via: devbox run -- <command>
+  - NOTE: devbox is currently broken on this x86_64-darwin host because
+    the pinned nixpkgs commit (293d6abedf04) dropped x86_64-darwin
+    support in Nixpkgs 26.11. Until devbox.json is updated to a commit
+    that still supports x86_64-darwin, run tools directly from the host
+    nix-profile (cargo, pnpm, just are all available on PATH). Do NOT
+    work around this by installing tools on the host via brew/apt/pip
+    install --user/pipx/cargo install/go install — add them to
+    devbox.json instead, OR run them directly if already on PATH.
+
+Never use: npm, npx, yarn, jest, biome (unless the project explicitly
+adopts them — it does not).
+
+Rust toolchain note: `cargo` is on PATH and works (1.95.0). `rustc` is
+not on PATH directly but cargo resolves it internally via the nix store.
+Subagents should invoke `cargo build`, `cargo test`, `cargo clippy`,
+`cargo fmt` — never invoke `rustc` directly.
+
+Frontend note: The NextJS frontend does not exist yet. When a story
+creates it, use `pnpm create next-app` (not `npx create-next-app`), pin
+to NextJS 15+ with static export enabled, TypeScript, Tailwind, ESLint
+antfu config. Ad-hoc packages via `pnpm dlx` (never `npx`).
