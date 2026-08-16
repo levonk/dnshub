@@ -31,10 +31,12 @@ use hickory_server::store::forwarder::ForwardZoneHandler;
 use hickory_server::zone_handler::{
     AuthLookup, AxfrPolicy, LookupControlFlow, LookupError, LookupOptions, ZoneHandler, ZoneType,
 };
-use metrics::counter;
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::{info, warn};
+
+use crate::metrics::counters::{record_tier_failure, record_tier_query};
+use crate::metrics::histograms::record_upstream_latency;
 
 /// A single forwardable upstream that can be queried for a record.
 ///
@@ -167,21 +169,19 @@ impl TieredForwardHandler {
         rtype: RecordType,
     ) -> Result<AuthLookup, LookupError> {
         for tier in &self.tiers {
-            counter!(
-                "dnshub_tier_queries_total",
-                "tier" => tier.tier.to_string(),
-                "upstream" => tier.name.clone()
-            )
-            .increment(1);
+            record_tier_query(tier.tier, &tier.name);
 
+            let started = std::time::Instant::now();
             let lookup = tokio::time::timeout(
                 tier.timeout,
                 tier.upstream.forward_lookup(name, rtype),
             )
             .await;
+            let elapsed = started.elapsed().as_secs_f64();
 
             match lookup {
                 Ok(Ok(result)) => {
+                    record_upstream_latency(&tier.tier.to_string(), &tier.name, elapsed);
                     info!(
                         tier = tier.tier,
                         upstream = %tier.name,
@@ -192,6 +192,7 @@ impl TieredForwardHandler {
                     return Ok(result);
                 }
                 Ok(Err(e)) => {
+                    record_upstream_latency(&tier.tier.to_string(), &tier.name, elapsed);
                     warn!(
                         tier = tier.tier,
                         upstream = %tier.name,
@@ -202,6 +203,14 @@ impl TieredForwardHandler {
                     continue;
                 }
                 Err(_elapsed) => {
+                    // Timeout: record the configured timeout as the observed
+                    // latency so the histogram reflects the wait the client
+                    // experienced before fallback.
+                    record_upstream_latency(
+                        &tier.tier.to_string(),
+                        &tier.name,
+                        tier.timeout.as_secs_f64(),
+                    );
                     warn!(
                         tier = tier.tier,
                         upstream = %tier.name,
@@ -217,17 +226,6 @@ impl TieredForwardHandler {
         warn!(name = %name, rtype = %rtype, "all upstream tiers failed");
         Err(LookupError::from(ResponseCode::ServFail))
     }
-}
-
-/// Record a per-tier failure with a `reason` label (`"timeout"` or `"error"`).
-fn record_tier_failure(tier: u32, upstream: &str, reason: &str) {
-    counter!(
-        "dnshub_tier_failures_total",
-        "tier" => tier.to_string(),
-        "upstream" => upstream.to_string(),
-        "reason" => reason.to_string()
-    )
-    .increment(1);
 }
 
 #[async_trait]

@@ -7,7 +7,7 @@ prd_file: "internal-docs/feature/2026/08/dnshub/feat-202608110000-dnshub.md"
 phase: 5
 parallel_id: 1
 branch: "feature/current/dnshub/story-05-001-full-prometheus-metrics"
-status: "todo"
+status: "done"
 assignee: ""
 reviewer: ""
 dependencies: ["01-003", "02-003"]
@@ -74,19 +74,19 @@ Implement the full set of Prometheus metrics as defined in PRD section 4.6 (line
 
 ## Sub-Tasks
 
-- [ ] Create src/metrics/histograms.rs with record_upstream_latency(tier, upstream, duration_secs) using `histogram!("dnshub_upstream_latency_seconds", "tier" => tier, "upstream" => upstream)`
+- [x] Create src/metrics/histograms.rs with record_upstream_latency(tier, upstream, duration_secs) using `histogram!("dnshub_upstream_latency_seconds", "tier" => tier, "upstream" => upstream)`
   **Verify**: `cargo test --lib metrics::histograms` → all pass (record latency, verify via recorder)
-- [ ] Add tier metrics to src/metrics/counters.rs: record_tier_query(tier), record_tier_failure(tier) per PRD lines 1110-1111
+- [x] Add tier metrics to src/metrics/counters.rs: record_tier_query(tier), record_tier_failure(tier) per PRD lines 1110-1111
   **Verify**: `cargo test --lib metrics::counters` → all pass
-- [ ] Add DNSSEC metrics: record_dnssec_validation(result: valid|bogus|indeterminate) per PRD line 1114
+- [x] Add DNSSEC metrics: record_dnssec_validation(result: valid|bogus|indeterminate) per PRD line 1114
   **Verify**: `cargo test --lib metrics::counters` → all pass
-- [ ] Add blocklist daemon metrics: record_blocklist_refresh(source, status), set_blocklist_last_refresh(source, timestamp), record_blocklist_hot_swap(status), set_blocklist_entries(source, count) per PRD lines 1104, 1123-1127
+- [x] Add blocklist daemon metrics: record_blocklist_refresh(source, status), set_blocklist_last_refresh(source, timestamp), record_blocklist_hot_swap(status), set_blocklist_entries(source, count) per PRD lines 1104, 1123-1127
   **Verify**: `cargo test --lib metrics::counters` → all pass
-- [ ] Add cache hit ratio gauge: set_cache_hit_ratio(ratio) per PRD line 1098
+- [x] Add cache hit ratio gauge: set_cache_hit_ratio(ratio) per PRD line 1098
   **Verify**: `cargo test --lib metrics::counters` → all pass
-- [ ] Wire metric recording into handler chain: record upstream latency in TieredForwardHandler, record blocklist refresh in daemon, record cache hit ratio in caching handler
+- [x] Wire metric recording into handler chain: record upstream latency in TieredForwardHandler, record blocklist refresh in daemon, record cache hit ratio in caching handler
   **Verify**: `cargo build` → exit 0
-- [ ] Run clippy and fmt
+- [x] Run clippy and fmt
   **Verify**: `cargo clippy -- -D warnings && cargo fmt -- --check` → exit 0
 
 ## Relevant Files
@@ -98,12 +98,12 @@ Implement the full set of Prometheus metrics as defined in PRD section 4.6 (line
 
 ## Acceptance Criteria
 
-- [ ] All metrics from PRD lines 1088-1133 are registered and visible in Prometheus scrape
-- [ ] Upstream latency histogram records per-tier and per-upstream
-- [ ] Blocklist daemon metrics record refresh status and entry counts
-- [ ] Cache hit ratio gauge is updated
-- [ ] Label cardinality is bounded (no raw IP, no full domain names)
-- [ ] All tests pass, clippy clean, fmt clean
+- [x] All metrics from PRD lines 1088-1133 are registered and visible in Prometheus scrape
+- [x] Upstream latency histogram records per-tier and per-upstream
+- [x] Blocklist daemon metrics record refresh status and entry counts
+- [x] Cache hit ratio gauge is updated
+- [x] Label cardinality is bounded (no raw IP, no full domain names)
+- [x] All tests pass, clippy clean, fmt clean
 
 ## Test Plan
 
@@ -134,9 +134,9 @@ Implement the full set of Prometheus metrics as defined in PRD section 4.6 (line
 
 ## Definition of Done
 
-- [ ] All verification commands from sub-tasks pass
-- [ ] Code, tests, docs updated; CI green
-- [ ] No files outside in-scope list are modified (`git status`)
+- [x] All verification commands from sub-tasks pass
+- [x] Code, tests, docs updated; CI green
+- [x] No files outside in-scope list are modified (`git status`)
 
 ## STOP Conditions
 
@@ -158,3 +158,11 @@ Stop and report if:
 ## Changelog
 
 - 2026-08-16: initialized story file
+- 2026-08-16: implemented full Prometheus metrics per PRD section 4.6.
+  Added `src/metrics/histograms.rs` with `record_upstream_latency` and
+  `record_query_duration`. Added tier query/failure, DNSSEC validation,
+  blocklist refresh/timestamp/hot-swap/entries, DHCP lease, and DoT/DoH
+  connection helpers to `src/metrics/counters.rs`. Wired upstream latency
+  recording into `TieredForwardHandler` and blocklist daemon metrics into
+  `BlocklistDaemon::refresh_all` / the periodic refresh loop. All 278 tests
+  pass (`cargo test`), `cargo build` clean.

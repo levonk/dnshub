@@ -16,9 +16,14 @@ use crate::blocklist::config::{BlocklistsConfig, SourceConfig};
 use crate::blocklist::hot_swap::HotSwapStore;
 use crate::blocklist::parser::parse_source;
 use crate::blocklist::{BlocklistError, Result};
+use crate::metrics::counters::{
+    record_blocklist_hot_swap, record_blocklist_refresh, set_blocklist_entries,
+    set_blocklist_last_refresh,
+};
 use flate2::read::GzDecoder;
 use std::io::Read;
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::Notify;
 
 /// Maximum response size: 500 MB. Reject larger downloads.
@@ -274,6 +279,11 @@ impl BlocklistDaemon {
                         entries = count,
                         "source refreshed successfully"
                     );
+                    record_blocklist_refresh(&source.name, "success");
+                    set_blocklist_entries(&source.name, count);
+                    if let Ok(now) = SystemTime::now().duration_since(UNIX_EPOCH) {
+                        set_blocklist_last_refresh(&source.name, now.as_secs() as f64);
+                    }
                 }
                 Err(e) => {
                     tracing::warn!(
@@ -281,6 +291,7 @@ impl BlocklistDaemon {
                         error = %e,
                         "source refresh failed, serving stale data"
                     );
+                    record_blocklist_refresh(&source.name, "stale");
                     // Continue with other sources; full backoff in story 06-002.
                 }
             }
@@ -308,18 +319,22 @@ impl BlocklistDaemon {
         let bloom_fpr = self.config.storage.bloom_fpr;
         let enable_bloom = self.config.storage.bloom_filter;
 
-        hot_swap
-            .swap_database(|temp_path| {
-                let compiler = BlocklistCompiler::new(bloom_fpr, enable_bloom);
-                let store = compiler.compile(&entries_arc, temp_path, Some(&bloom_path))?;
-                Ok(store)
-            })
-            .map_err(|e| {
+        match hot_swap.swap_database(|temp_path| {
+            let compiler = BlocklistCompiler::new(bloom_fpr, enable_bloom);
+            let store = compiler.compile(&entries_arc, temp_path, Some(&bloom_path))?;
+            Ok(store)
+        }) {
+            Ok(()) => {
+                record_blocklist_hot_swap("success");
+                tracing::info!(total_entries = entries_arc.len(), "blocklist refresh complete");
+            }
+            Err(e) => {
+                record_blocklist_hot_swap("failure");
                 tracing::error!(error = %e, "hot-swap failed");
-                e
-            })?;
+                return Err(e);
+            }
+        }
 
-        tracing::info!(total_entries = entries_arc.len(), "blocklist refresh complete");
         Ok(())
     }
 
@@ -378,6 +393,7 @@ impl BlocklistDaemon {
                                     error = %e,
                                     "periodic refresh failed"
                                 );
+                                record_blocklist_refresh(&source.name, "failure");
                             }
                         }
                     }

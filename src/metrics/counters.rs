@@ -14,6 +14,151 @@
 use metrics::{counter, gauge};
 
 // ---------------------------------------------------------------------------
+// Upstream tier usage and latency (PRD section 4.6, lines 1107-1111)
+// ---------------------------------------------------------------------------
+
+/// Record a query dispatched to an upstream tier. Increments
+/// `dnshub_tier_queries_total` with labels `tier` (e.g. `"1"`..`"5"`) and
+/// `upstream` (the configured upstream name, e.g. `"unbound"`, `"odoh"`).
+///
+/// The PRD minimum label set is `tier`; the `upstream` label is a bounded
+/// superset (a small, configured set of names) that preserves the existing
+/// per-upstream breakdown without unbounded cardinality.
+pub fn record_tier_query(tier: u32, upstream: &str) {
+    counter!(
+        "dnshub_tier_queries_total",
+        "tier" => tier.to_string(),
+        "upstream" => upstream.to_string()
+    )
+    .increment(1);
+}
+
+/// Record a per-tier upstream failure. Increments `dnshub_tier_failures_total`
+/// with labels `tier`, `upstream`, and `reason` (`"timeout"` or `"error"`).
+///
+/// The PRD minimum label set is `tier`; the `upstream` and `reason` labels are
+/// bounded supersets that keep the existing failure breakdown.
+pub fn record_tier_failure(tier: u32, upstream: &str, reason: &str) {
+    counter!(
+        "dnshub_tier_failures_total",
+        "tier" => tier.to_string(),
+        "upstream" => upstream.to_string(),
+        "reason" => reason.to_string()
+    )
+    .increment(1);
+}
+
+// ---------------------------------------------------------------------------
+// DNSSEC validation (PRD section 4.6, line 1114)
+// ---------------------------------------------------------------------------
+
+/// Record a DNSSEC validation result. Increments
+/// `dnshub_dnssec_validation_total` with label `result` (one of `"valid"`,
+/// `"bogus"`, `"indeterminate"`).
+///
+/// These results are derived from Unbound responses (the validating upstream).
+/// The label set is fixed at three values, so cardinality is bounded.
+pub fn record_dnssec_validation(result: &str) {
+    counter!(
+        "dnshub_dnssec_validation_total",
+        "result" => result.to_string()
+    )
+    .increment(1);
+}
+
+// ---------------------------------------------------------------------------
+// Blocklist daemon metrics (PRD section 4.6, lines 1104, 1123-1127)
+// ---------------------------------------------------------------------------
+
+/// Record a blocklist source refresh outcome. Increments
+/// `dnshub_blocklist_refresh_total` with labels `source` (the source name,
+/// e.g. `"easylist"`, `"hagezi"`) and `status` (one of `"success"`,
+/// `"failure"`, `"stale"`).
+///
+/// `"stale"` is recorded when a refresh fails and the daemon continues serving
+/// the previously compiled database (PRD section 4.3, serve-stale on fetch
+/// failure).
+pub fn record_blocklist_refresh(source: &str, status: &str) {
+    counter!(
+        "dnshub_blocklist_refresh_total",
+        "source" => source.to_string(),
+        "status" => status.to_string()
+    )
+    .increment(1);
+}
+
+/// Set the last successful refresh timestamp for a blocklist source. Sets the
+/// `dnshub_blocklist_last_refresh_timestamp` gauge with label `source`.
+///
+/// `timestamp` is a Unix timestamp (seconds since epoch). Use
+/// `SystemTime::now().duration_since(UNIX_EPOCH).as_secs() as f64` at the
+/// call site.
+pub fn set_blocklist_last_refresh(source: &str, timestamp: f64) {
+    gauge!(
+        "dnshub_blocklist_last_refresh_timestamp",
+        "source" => source.to_string()
+    )
+    .set(timestamp);
+}
+
+/// Record a blocklist hot-swap outcome. Increments
+/// `dnshub_blocklist_hot_swap_total` with label `status` (one of `"success"`,
+/// `"failure"`).
+///
+/// A hot-swap is the atomic replacement of the live LMDB database handle
+/// (PRD section 4.2).
+pub fn record_blocklist_hot_swap(status: &str) {
+    counter!(
+        "dnshub_blocklist_hot_swap_total",
+        "status" => status.to_string()
+    )
+    .increment(1);
+}
+
+/// Set the number of entries contributed by a blocklist source. Sets the
+/// `dnshub_blocklist_entries_total` gauge with label `source`.
+///
+/// This is the per-source entry count after parsing and deduplication, used
+/// by the blocklist analytics dashboard (PRD section 4.6, line 1104).
+pub fn set_blocklist_entries(source: &str, count: usize) {
+    gauge!(
+        "dnshub_blocklist_entries_total",
+        "source" => source.to_string()
+    )
+    .set(count as f64);
+}
+
+// ---------------------------------------------------------------------------
+// DHCP lease gauge (PRD section 4.4 — DHCP server observability)
+// ---------------------------------------------------------------------------
+
+/// Set the current number of active DHCP leases. Sets the
+/// `dnshub_dhcp_leases_active` gauge.
+///
+/// "Active" leases are those that have not expired or been released. The value
+/// is bounded by the configured lease pool size, so cardinality is not a
+/// concern.
+pub fn set_dhcp_leases_active(count: usize) {
+    gauge!("dnshub_dhcp_leases_active").set(count as f64);
+}
+
+// ---------------------------------------------------------------------------
+// DoT / DoH connection counters (PRD section 4.7 — encrypted transport)
+// ---------------------------------------------------------------------------
+
+/// Record an accepted DoT (DNS-over-TLS, port 853) connection. Increments
+/// `dnshub_dot_connections_total`.
+pub fn record_dot_connection() {
+    counter!("dnshub_dot_connections_total").increment(1);
+}
+
+/// Record an accepted DoH (DNS-over-HTTPS, port 443) connection. Increments
+/// `dnshub_doh_connections_total`.
+pub fn record_doh_connection() {
+    counter!("dnshub_doh_connections_total").increment(1);
+}
+
+// ---------------------------------------------------------------------------
 // Query rate
 // ---------------------------------------------------------------------------
 
@@ -395,5 +540,144 @@ mod tests {
             out.contains("dnshub_clients_active 0"),
             "expected gauge value 0, got:\n{out}"
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // New metrics from story 05-001
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn record_tier_query_registers_counter_with_labels() {
+        let _ = handle();
+        record_tier_query(1, "unbound");
+        record_tier_query(2, "odoh");
+        record_tier_query(1, "unbound");
+        assert_metric_visible("dnshub_tier_queries_total", r#"tier="1""#);
+        assert_metric_visible("dnshub_tier_queries_total", r#"upstream="odoh""#);
+    }
+
+    #[test]
+    fn record_tier_failure_registers_counter_with_labels() {
+        let _ = handle();
+        record_tier_failure(1, "unbound", "timeout");
+        record_tier_failure(2, "odoh", "error");
+        assert_metric_visible("dnshub_tier_failures_total", r#"tier="2""#);
+        assert_metric_visible("dnshub_tier_failures_total", r#"reason="timeout""#);
+    }
+
+    #[test]
+    fn record_dnssec_validation_registers_counter_with_result_label() {
+        let _ = handle();
+        record_dnssec_validation("valid");
+        record_dnssec_validation("valid");
+        record_dnssec_validation("bogus");
+        record_dnssec_validation("indeterminate");
+        assert_metric_visible("dnshub_dnssec_validation_total", r#"result="valid""#);
+        assert_metric_visible("dnshub_dnssec_validation_total", r#"result="bogus""#);
+        assert_metric_visible(
+            "dnshub_dnssec_validation_total",
+            r#"result="indeterminate""#,
+        );
+    }
+
+    #[test]
+    fn record_blocklist_refresh_registers_counter_with_labels() {
+        let _ = handle();
+        record_blocklist_refresh("easylist", "success");
+        record_blocklist_refresh("hagezi", "failure");
+        record_blocklist_refresh("urlhaus", "stale");
+        assert_metric_visible(
+            "dnshub_blocklist_refresh_total",
+            r#"source="easylist",status="success""#,
+        );
+        assert_metric_visible(
+            "dnshub_blocklist_refresh_total",
+            r#"source="hagezi",status="failure""#,
+        );
+        assert_metric_visible(
+            "dnshub_blocklist_refresh_total",
+            r#"status="stale""#,
+        );
+    }
+
+    #[test]
+    fn set_blocklist_last_refresh_sets_gauge_with_source_label() {
+        let _ = handle();
+        set_blocklist_last_refresh("easylist", 1_700_000_000.0);
+        let out = handle().render();
+        assert!(
+            out.contains("dnshub_blocklist_last_refresh_timestamp"),
+            "expected last refresh timestamp gauge, got:\n{out}"
+        );
+        assert!(
+            out.contains(r#"source="easylist""#),
+            "expected source label `easylist`, got:\n{out}"
+        );
+        assert!(
+            out.contains("1700000000"),
+            "expected timestamp value 1700000000, got:\n{out}"
+        );
+    }
+
+    #[test]
+    fn record_blocklist_hot_swap_registers_counter_with_status_label() {
+        let _ = handle();
+        record_blocklist_hot_swap("success");
+        record_blocklist_hot_swap("failure");
+        assert_metric_visible(
+            "dnshub_blocklist_hot_swap_total",
+            r#"status="success""#,
+        );
+        assert_metric_visible(
+            "dnshub_blocklist_hot_swap_total",
+            r#"status="failure""#,
+        );
+    }
+
+    #[test]
+    fn set_blocklist_entries_sets_gauge_with_source_label() {
+        let _ = handle();
+        set_blocklist_entries("easylist", 125_000);
+        set_blocklist_entries("hagezi", 80_000);
+        let out = handle().render();
+        assert!(
+            out.contains("dnshub_blocklist_entries_total"),
+            "expected blocklist entries gauge, got:\n{out}"
+        );
+        assert!(
+            out.contains(r#"source="easylist""#),
+            "expected source label `easylist`, got:\n{out}"
+        );
+        assert!(
+            out.contains("125000"),
+            "expected entry count 125000, got:\n{out}"
+        );
+    }
+
+    #[test]
+    fn set_dhcp_leases_active_sets_gauge() {
+        let _ = handle();
+        set_dhcp_leases_active(42);
+        let out = handle().render();
+        assert!(
+            out.contains("dnshub_dhcp_leases_active 42"),
+            "expected gauge value 42, got:\n{out}"
+        );
+        set_dhcp_leases_active(0);
+        let out = handle().render();
+        assert!(
+            out.contains("dnshub_dhcp_leases_active 0"),
+            "expected gauge value 0, got:\n{out}"
+        );
+    }
+
+    #[test]
+    fn record_dot_and_doh_connection_counters() {
+        let _ = handle();
+        record_dot_connection();
+        record_dot_connection();
+        record_doh_connection();
+        assert_metric_visible("dnshub_dot_connections_total", "");
+        assert_metric_visible("dnshub_doh_connections_total", "");
     }
 }
