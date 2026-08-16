@@ -13,17 +13,13 @@
 
 use crate::blocklist::compiler::BlocklistCompiler;
 use crate::blocklist::config::{BlocklistsConfig, SourceConfig};
+use crate::blocklist::health::SourceHealthRegistry;
 use crate::blocklist::hot_swap::HotSwapStore;
 use crate::blocklist::parser::parse_source;
-use crate::blocklist::{BlocklistError, Result};
-use crate::metrics::counters::{
-    record_blocklist_hot_swap, record_blocklist_refresh, set_blocklist_entries,
-    set_blocklist_last_refresh,
-};
+use crate::blocklist::{BlocklistEntry, BlocklistError, Result};
 use flate2::read::GzDecoder;
 use std::io::Read;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::Notify;
 
 /// Maximum response size: 500 MB. Reject larger downloads.
@@ -45,6 +41,8 @@ pub struct BlocklistDaemon {
     /// immediate, out-of-band refresh (e.g. on SIGHUP via
     /// [`BlocklistDaemon::trigger_refresh`]).
     notify: Arc<Notify>,
+    /// Per-source health trackers (backoff + circuit breaker + metrics).
+    health: std::sync::Mutex<SourceHealthRegistry>,
 }
 
 impl BlocklistDaemon {
@@ -55,13 +53,7 @@ impl BlocklistDaemon {
             .build()
             .expect("failed to build reqwest client");
 
-        Self {
-            config,
-            hot_swap,
-            client,
-            expected_counts: std::sync::Mutex::new(std::collections::HashMap::new()),
-            notify: Arc::new(Notify::new()),
-        }
+        Self::build(config, hot_swap, client)
     }
 
     /// Create a daemon with a custom HTTP client (for testing).
@@ -70,12 +62,26 @@ impl BlocklistDaemon {
         hot_swap: Arc<HotSwapStore>,
         client: reqwest::Client,
     ) -> Self {
+        Self::build(config, hot_swap, client)
+    }
+
+    fn build(
+        config: BlocklistsConfig,
+        hot_swap: Arc<HotSwapStore>,
+        client: reqwest::Client,
+    ) -> Self {
+        let max_failures = config.failure_handling.max_consecutive_failures;
+        let cooldown = config.failure_handling.cooldown();
+        let names = config.sources.iter().map(|s| s.name.clone());
+        let health = SourceHealthRegistry::for_sources(names, max_failures, cooldown);
+
         Self {
             config,
             hot_swap,
             client,
             expected_counts: std::sync::Mutex::new(std::collections::HashMap::new()),
             notify: Arc::new(Notify::new()),
+            health: std::sync::Mutex::new(health),
         }
     }
 
@@ -236,21 +242,38 @@ impl BlocklistDaemon {
         Ok(())
     }
 
-    /// Refresh a single source: fetch, validate, parse, compile.
-    pub async fn refresh_source(
+    /// Returns `true` if a fetch should be attempted for the source at the
+    /// given index (circuit breaker not open, backoff elapsed).
+    ///
+    /// When `false`, the daemon skips the fetch and continues serving stale
+    /// data for that source.
+    pub fn should_retry_source(&self, idx: usize) -> bool {
+        let health = self.health.lock().unwrap();
+        health
+            .get(idx)
+            .map(|h| h.should_retry())
+            .unwrap_or(true)
+    }
+
+    /// Fetch and parse a single source, returning the parsed entries.
+    ///
+    /// This is the core fetch+parse path used by both [`refresh_source`]
+    /// and [`refresh_all`]. It does **not** record health; callers are
+    /// responsible for calling [`record_source_success`] or
+    /// [`record_source_failure`] based on the outcome.
+    ///
+    /// [`refresh_source`]: BlocklistDaemon::refresh_source
+    /// [`record_source_success`]: BlocklistDaemon::record_source_success
+    /// [`record_source_failure`]: BlocklistDaemon::record_source_failure
+    async fn fetch_and_parse(
         &self,
         source: &SourceConfig,
         source_id: u16,
-    ) -> Result<usize> {
+    ) -> Result<Vec<BlocklistEntry>> {
         tracing::info!(source = source.name, "refreshing blocklist source");
 
-        // Fetch content.
         let content = self.fetch_source(source).await?;
-
-        // Parse content.
         let entries = parse_source(&content, source.format, source_id, 0)?;
-
-        // Validate entry count (also updates expected count).
         self.validate_content(&source.name, entries.len())?;
 
         tracing::info!(
@@ -258,50 +281,113 @@ impl BlocklistDaemon {
             entries = entries.len(),
             "parsed blocklist source"
         );
+        Ok(entries)
+    }
 
-        Ok(entries.len())
+    /// Record a successful fetch for the source at `idx`.
+    fn record_source_success(&self, idx: usize) {
+        if let Some(h) = self.health.lock().unwrap().get_mut(idx) {
+            h.record_success();
+        }
+    }
+
+    /// Record a failed fetch for the source at `idx`.
+    fn record_source_failure(&self, idx: usize) {
+        if let Some(h) = self.health.lock().unwrap().get_mut(idx) {
+            h.record_failure();
+        }
+    }
+
+    /// Refresh a single source: fetch, validate, parse.
+    ///
+    /// Records success/failure in the per-source health tracker. Returns
+    /// the number of parsed entries on success.
+    pub async fn refresh_source(
+        &self,
+        source: &SourceConfig,
+        source_id: u16,
+    ) -> Result<usize> {
+        let idx = self
+            .config
+            .sources
+            .iter()
+            .position(|s| s.name == source.name)
+            .unwrap_or(0);
+        match self.fetch_and_parse(source, source_id).await {
+            Ok(entries) => {
+                self.record_source_success(idx);
+                Ok(entries.len())
+            }
+            Err(e) => {
+                tracing::warn!(
+                    source = source.name,
+                    error = %e,
+                    "source refresh failed, recording failure for backoff"
+                );
+                self.record_source_failure(idx);
+                Err(e)
+            }
+        }
+    }
+
+    /// Refresh a single source by index, honouring the circuit breaker.
+    ///
+    /// If the source's health tracker says `should_retry()` is `false`
+    /// (breaker open / backoff not elapsed), the fetch is skipped and
+    /// `Ok(0)` is returned without touching the network. Otherwise the
+    /// fetch proceeds and health is recorded.
+    async fn refresh_source_by_idx(&self, idx: usize) -> Result<usize> {
+        if !self.should_retry_source(idx) {
+            tracing::debug!(
+                source = self.config.sources[idx].name,
+                "skipping refresh: circuit breaker open / backoff active"
+            );
+            return Ok(0);
+        }
+        let source = &self.config.sources[idx];
+        let source_id = 1u16 << idx.min(15);
+        self.refresh_source(source, source_id).await
     }
 
     /// Refresh all sources and compile into LMDB.
     ///
-    /// Fetches all sources in parallel, parses them, merges entries, and
-    /// compiles the combined list into a new LMDB database via hot-swap.
+    /// Fetches each source (honouring the circuit breaker), parses it,
+    /// merges entries, and compiles the combined list into a new LMDB
+    /// database via hot-swap. Sources whose breaker is open are skipped
+    /// (stale data is served).
     pub async fn refresh_all(&self) -> Result<()> {
         let mut all_entries = Vec::new();
 
         for (idx, source) in self.config.sources.iter().enumerate() {
             let source_id = 1u16 << idx.min(15);
 
-            match self.refresh_source(source, source_id).await {
-                Ok(count) => {
+            // Honour the circuit breaker / backoff.
+            if !self.should_retry_source(idx) {
+                tracing::info!(
+                    source = source.name,
+                    "skipping source refresh: circuit breaker open, serving stale"
+                );
+                continue;
+            }
+
+            match self.fetch_and_parse(source, source_id).await {
+                Ok(entries) => {
+                    self.record_source_success(idx);
                     tracing::info!(
                         source = source.name,
-                        entries = count,
+                        entries = entries.len(),
                         "source refreshed successfully"
                     );
-                    record_blocklist_refresh(&source.name, "success");
-                    set_blocklist_entries(&source.name, count);
-                    if let Ok(now) = SystemTime::now().duration_since(UNIX_EPOCH) {
-                        set_blocklist_last_refresh(&source.name, now.as_secs() as f64);
-                    }
+                    all_entries.extend(entries);
                 }
                 Err(e) => {
+                    self.record_source_failure(idx);
                     tracing::warn!(
                         source = source.name,
                         error = %e,
                         "source refresh failed, serving stale data"
                     );
-                    record_blocklist_refresh(&source.name, "stale");
-                    // Continue with other sources; full backoff in story 06-002.
-                }
-            }
-
-            // Re-fetch and parse to get the actual entries for compilation.
-            // (In a production system, we'd cache the parsed entries from
-            // refresh_source, but this keeps the code simple.)
-            if let Ok(content) = self.fetch_source(source).await {
-                if let Ok(entries) = parse_source(&content, source.format, source_id, 0) {
-                    all_entries.extend(entries);
+                    // Continue with other sources.
                 }
             }
         }
@@ -319,22 +405,18 @@ impl BlocklistDaemon {
         let bloom_fpr = self.config.storage.bloom_fpr;
         let enable_bloom = self.config.storage.bloom_filter;
 
-        match hot_swap.swap_database(|temp_path| {
-            let compiler = BlocklistCompiler::new(bloom_fpr, enable_bloom);
-            let store = compiler.compile(&entries_arc, temp_path, Some(&bloom_path))?;
-            Ok(store)
-        }) {
-            Ok(()) => {
-                record_blocklist_hot_swap("success");
-                tracing::info!(total_entries = entries_arc.len(), "blocklist refresh complete");
-            }
-            Err(e) => {
-                record_blocklist_hot_swap("failure");
+        hot_swap
+            .swap_database(|temp_path| {
+                let compiler = BlocklistCompiler::new(bloom_fpr, enable_bloom);
+                let store = compiler.compile(&entries_arc, temp_path, Some(&bloom_path))?;
+                Ok(store)
+            })
+            .map_err(|e| {
                 tracing::error!(error = %e, "hot-swap failed");
-                return Err(e);
-            }
-        }
+                e
+            })?;
 
+        tracing::info!(total_entries = entries_arc.len(), "blocklist refresh complete");
         Ok(())
     }
 
@@ -385,15 +467,12 @@ impl BlocklistDaemon {
                     for (idx, timer) in timers.iter_mut().enumerate() {
                         timer.tick().await;
                         if idx < self.config.sources.len() {
-                            let source = &self.config.sources[idx];
-                            let source_id = 1u16 << idx.min(15);
-                            if let Err(e) = self.refresh_source(source, source_id).await {
+                            if let Err(e) = self.refresh_source_by_idx(idx).await {
                                 tracing::warn!(
-                                    source = source.name,
+                                    source = self.config.sources[idx].name,
                                     error = %e,
                                     "periodic refresh failed"
                                 );
-                                record_blocklist_refresh(&source.name, "failure");
                             }
                         }
                     }
@@ -508,6 +587,7 @@ mod tests {
         let config = BlocklistsConfig {
             sources,
             storage: Default::default(),
+            failure_handling: Default::default(),
         };
         let daemon = BlocklistDaemon::new(config, hot_swap.clone());
         (daemon, hot_swap)

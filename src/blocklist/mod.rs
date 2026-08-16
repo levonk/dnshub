@@ -26,10 +26,14 @@
 //! contiguously, enabling prefix search via LMDB cursor (`MDB_SET_RANGE`).
 
 pub mod bloom;
+pub mod boot;
 pub mod categories;
+pub mod circuit_breaker;
+pub mod backoff;
 pub mod compiler;
 pub mod config;
 pub mod daemon;
+pub mod health;
 pub mod hot_swap;
 pub mod parser;
 pub mod storage;
@@ -43,8 +47,9 @@ pub use categories::{
     bitmap_to_names, category_from_str, category_to_bit, Category, CategoryBitmap,
 };
 pub use compiler::BlocklistCompiler;
-pub use config::{BlocklistsConfig, Format, SourceConfig, StorageConfig};
+pub use config::{BlocklistsConfig, FailureHandlingConfig, Format, SourceConfig, StorageConfig};
 pub use daemon::BlocklistDaemon;
+pub use health::{SourceHealth, SourceHealthRegistry};
 pub use hot_swap::HotSwapStore;
 pub use parser::{parse_adblock, parse_domains, parse_hosts, parse_source};
 pub use storage::LmdbBlocklistStore;
