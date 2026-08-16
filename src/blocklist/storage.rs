@@ -15,7 +15,7 @@
 
 use crate::blocklist::bloom::BloomIndex;
 use crate::blocklist::{
-    reverse_domain, BlocklistError, BlocklistMetadata, BlocklistStore, Result,
+    reverse_domain, BlocklistError, BlocklistMetadata, BlocklistStore, CategoryBitmap, Result,
 };
 use heed::types::{Bytes, Str};
 use heed::{Database, Env, EnvOpenOptions};
@@ -139,6 +139,15 @@ impl LmdbBlocklistStore {
             Some(bytes) => Ok(Some(BlocklistMetadata::from_bytes(bytes)?)),
             None => Ok(None),
         }
+    }
+
+    /// Retrieve the category bitmap for a domain.
+    ///
+    /// Returns `Some(bitmap)` if the domain is stored, or `None` if the
+    /// domain is not in the blocklist. This is a convenience wrapper around
+    /// [`get`](Self::get) that extracts just the `categories` field.
+    pub fn get_categories(&self, domain: &str) -> Result<Option<CategoryBitmap>> {
+        Ok(self.get(domain)?.map(|meta| meta.categories))
     }
 
     /// Delete a single domain entry.
@@ -437,5 +446,48 @@ mod tests {
         // Reopen and verify data persists.
         let store = LmdbBlocklistStore::open(dir.path(), None).unwrap();
         assert_eq!(store.get("example.com").unwrap(), Some(meta));
+    }
+
+    #[test]
+    fn test_store_get_categories() {
+        let dir = TempDir::new().unwrap();
+        let store = LmdbBlocklistStore::open(dir.path(), None).unwrap();
+
+        // ads (bit 0) | malware (bit 3) = 0b1001
+        let bitmap: u32 = (1 << 0) | (1 << 3);
+        store
+            .put("ads.example.com", &make_meta(bitmap, 1))
+            .unwrap();
+
+        assert_eq!(
+            store.get_categories("ads.example.com").unwrap(),
+            Some(bitmap)
+        );
+        // Non-existent domain returns None.
+        assert_eq!(store.get_categories("nonexistent.com").unwrap(), None);
+    }
+
+    #[test]
+    fn test_store_get_categories_accumulated() {
+        let dir = TempDir::new().unwrap();
+        let store = LmdbBlocklistStore::open(dir.path(), None).unwrap();
+
+        // First source: ads (bit 0).
+        store.put("example.com", &make_meta(1 << 0, 1)).unwrap();
+
+        // Second source contributes tracker (bit 1) via compile_into-style
+        // merge: OR the new category into the existing metadata.
+        let existing = store.get("example.com").unwrap().unwrap();
+        let merged = BlocklistMetadata {
+            categories: existing.categories | (1 << 1),
+            sources: existing.sources | 2,
+            first_seen: existing.first_seen,
+            last_updated: existing.last_updated,
+        };
+        store.put("example.com", &merged).unwrap();
+
+        // Accumulated bitmap should have both ads and tracker.
+        let bitmap = store.get_categories("example.com").unwrap().unwrap();
+        assert_eq!(bitmap, (1 << 0) | (1 << 1));
     }
 }

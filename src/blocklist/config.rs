@@ -19,6 +19,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::blocklist::categories::{bitmap_from_names, CategoryBitmap};
+
 /// Blocklist source format.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -49,8 +51,9 @@ pub struct SourceConfig {
     pub format: Format,
     /// Category labels for this source (e.g. `["ads", "tracker"]`).
     ///
-    /// In this story categories are stored as `0`; category bitmap population
-    /// arrives in story 02-002.
+    /// These are converted to a [`CategoryBitmap`] via
+    /// [`SourceConfig::category_bitmap`]. Unknown names are silently
+    /// ignored.
     #[serde(default)]
     pub categories: Vec<String>,
     /// Refresh interval in hours. Mutually exclusive with `refresh_minutes`.
@@ -74,6 +77,16 @@ impl SourceConfig {
             return u64::from(hours) * 3600;
         }
         24 * 3600 // default: daily
+    }
+
+    /// Returns the category bitmap for this source, computed from the
+    /// `categories` name list.
+    ///
+    /// Each name is mapped to a [`Category`][crate::blocklist::Category] bit
+    /// and OR'd together. Unknown names are silently ignored (they contribute
+    /// no bits). Returns `0` when no categories are configured.
+    pub fn category_bitmap(&self) -> CategoryBitmap {
+        bitmap_from_names(self.categories.iter().map(String::as_str))
     }
 }
 
@@ -198,5 +211,44 @@ format = "hosts"
 "#;
         let config: BlocklistsConfig = toml::from_str(toml_str).unwrap();
         assert_eq!(config.sources[0].format, Format::Hosts);
+    }
+
+    #[test]
+    fn test_source_category_bitmap() {
+        let source = SourceConfig {
+            name: "test".to_string(),
+            url: "https://example.com/list.txt".to_string(),
+            format: Format::Domains,
+            categories: vec!["ads".to_string(), "tracker".to_string()],
+            refresh_hours: None,
+            refresh_minutes: None,
+        };
+        assert_eq!(source.category_bitmap(), (1 << 0) | (1 << 1));
+    }
+
+    #[test]
+    fn test_source_category_bitmap_ignores_unknown() {
+        let source = SourceConfig {
+            name: "test".to_string(),
+            url: "https://example.com/list.txt".to_string(),
+            format: Format::Domains,
+            categories: vec!["ads".to_string(), "bogus".to_string(), "malware".to_string()],
+            refresh_hours: None,
+            refresh_minutes: None,
+        };
+        assert_eq!(source.category_bitmap(), (1 << 0) | (1 << 3));
+    }
+
+    #[test]
+    fn test_source_category_bitmap_empty() {
+        let source = SourceConfig {
+            name: "test".to_string(),
+            url: "https://example.com/list.txt".to_string(),
+            format: Format::Domains,
+            categories: vec![],
+            refresh_hours: None,
+            refresh_minutes: None,
+        };
+        assert_eq!(source.category_bitmap(), 0);
     }
 }
