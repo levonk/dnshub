@@ -148,6 +148,7 @@ fn current_timestamp() -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::blocklist::categories::{bitmap_has_category, category_to_bit, Category};
     use crate::blocklist::test_utils::TempDir;
     use crate::blocklist::BlocklistStore;
 
@@ -314,5 +315,67 @@ mod tests {
         let store = compiler.compile(&[], dir.path(), None::<&Path>).unwrap();
         assert_eq!(store.len().unwrap(), 0);
         assert!(store.is_empty().unwrap());
+    }
+
+    #[test]
+    fn test_compile_into_multi_source_category_accumulation() {
+        let dir = TempDir::new().unwrap();
+        let compiler = BlocklistCompiler::default();
+
+        // Source 1: ads list — tags example.com with the `ads` category.
+        let ads_entries = vec![BlocklistEntry {
+            domain: "example.com".to_string(),
+            categories: category_to_bit(Category::Ads),
+            sources: 1,
+        }];
+        let store = compiler.compile(&ads_entries, dir.path(), None::<&Path>).unwrap();
+
+        // Source 2: malware list — same domain, different category + source.
+        let malware_entries = vec![BlocklistEntry {
+            domain: "example.com".to_string(),
+            categories: category_to_bit(Category::Malware),
+            sources: 2,
+        }];
+        compiler.compile_into(&malware_entries, &store).unwrap();
+
+        // The accumulated bitmap should have both ads and malware bits.
+        let meta = store.lookup("example.com").unwrap().unwrap();
+        assert!(bitmap_has_category(meta.categories, Category::Ads));
+        assert!(bitmap_has_category(meta.categories, Category::Malware));
+        assert!(!bitmap_has_category(meta.categories, Category::Tracker));
+        assert_eq!(meta.sources, 1 | 2);
+
+        // get_categories should return the same accumulated bitmap.
+        let cats = store.get_categories("example.com").unwrap().unwrap();
+        assert_eq!(cats, category_to_bit(Category::Ads) | category_to_bit(Category::Malware));
+    }
+
+    #[test]
+    fn test_compile_populates_categories_from_entries() {
+        let dir = TempDir::new().unwrap();
+        let compiler = BlocklistCompiler::default();
+
+        let entries = vec![
+            BlocklistEntry {
+                domain: "ads.example.com".to_string(),
+                categories: category_to_bit(Category::Ads),
+                sources: 1,
+            },
+            BlocklistEntry {
+                domain: "tracker.example.com".to_string(),
+                categories: category_to_bit(Category::Tracker) | category_to_bit(Category::Telemetry),
+                sources: 1,
+            },
+        ];
+        let store = compiler.compile(&entries, dir.path(), None::<&Path>).unwrap();
+
+        let ads_meta = store.get_categories("ads.example.com").unwrap().unwrap();
+        assert_eq!(ads_meta, category_to_bit(Category::Ads));
+
+        let tracker_meta = store.get_categories("tracker.example.com").unwrap().unwrap();
+        assert_eq!(
+            tracker_meta,
+            category_to_bit(Category::Tracker) | category_to_bit(Category::Telemetry)
+        );
     }
 }
