@@ -12,6 +12,7 @@
 //! `blocklists.toml` shape (PRD lines 1480-1558) is `[[sources]]` plus
 //! `[storage]`.
 
+mod dhcp;
 mod hot_reload;
 mod validation;
 
@@ -23,6 +24,11 @@ use std::sync::Arc;
 
 pub use hot_reload::HotReloadManager;
 pub use validation::{validate_blocklists, validate_config};
+
+pub use dhcp::{
+    ClassifyConfig, ClassifyMatch, DhcpConfig, DhcpPoolConfig, MacBlocklistConfig,
+    StaticLeaseConfig,
+};
 
 /// Errors that can occur while loading or validating configuration.
 #[derive(Debug)]
@@ -383,44 +389,6 @@ impl UpstreamConfig {
 // ---------------------------------------------------------------------------
 // Reserved sections for later stories (defined so the config parses cleanly).
 // ---------------------------------------------------------------------------
-
-/// `[dhcp]` — DHCP server (story 04-001+).
-///
-/// This is a config skeleton: the fields mirror the PRD `dnshub.toml`
-/// example (lines 1392-1402) so the main config parses cleanly, but the
-/// DHCP server logic itself is implemented in Phase 04 stories.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct DhcpConfig {
-    #[serde(default)]
-    pub enabled: bool,
-    /// Network interface to bind the DHCP listener to, e.g. `"eth0"`.
-    #[serde(default)]
-    pub interface: String,
-    /// DHCP listen address, e.g. `"0.0.0.0:67"`.
-    #[serde(default)]
-    pub listen: String,
-    /// First address in the dynamic pool, e.g. `"192.168.1.100"`.
-    #[serde(default)]
-    pub pool_start: String,
-    /// Last address in the dynamic pool, e.g. `"192.168.1.200"`.
-    #[serde(default)]
-    pub pool_end: String,
-    /// Subnet mask, e.g. `"255.255.255.0"`.
-    #[serde(default)]
-    pub subnet: String,
-    /// Default gateway/router option, e.g. `"192.168.1.1"`.
-    #[serde(default)]
-    pub router: String,
-    /// Domain name option, e.g. `"levonk.com"`.
-    #[serde(default)]
-    pub domain: String,
-    /// Lease duration in hours.
-    #[serde(default)]
-    pub lease_time_hours: u32,
-    /// NTP server option, e.g. `"172.20.255.55"`.
-    #[serde(default)]
-    pub ntp_server: String,
-}
 
 /// `[rate_limit]` — token bucket rate limiting (story 03-004). Reserved.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
