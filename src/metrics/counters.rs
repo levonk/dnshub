@@ -1,13 +1,13 @@
-//! Helper functions for recording basic dnshub metrics.
+//! Helper functions for recording basic and per-client dnshub metrics.
 //!
 //! Each helper wraps the allocation-free [`metrics`] facade macros so the DNS
 //! handler chain (wired in Phase 02) can record a metric with a single call.
 //! Metric names follow Prometheus conventions: `snake_case` with the `dnshub_`
 //! prefix (PRD section 4.6).
 //!
-//! These helpers are designed for extensibility — additional labels (e.g.
-//! per-client profile, TLD) will be added in stories 02-003 and 05-001 without
-//! changing call sites that only need the basic shape.
+//! Per-client dimensions use a **client tag** (profile name or hostname, never
+//! a raw IP) to keep label cardinality bounded. See [`super::labels`] for the
+//! normalization logic.
 //!
 //! [`metrics`]: https://docs.rs/metrics/latest/metrics/
 
@@ -22,9 +22,27 @@ use metrics::{counter, gauge};
 /// (e.g. `"A"`, `"AAAA"`, `"MX"`).
 ///
 /// Label cardinality is bounded by using `client_tag` rather than raw client
-/// IPs (PRD section 4.6).
+/// IPs (PRD section 4.6). Callers should obtain `client_tag` from
+/// [`super::labels::client_to_tag`].
 pub fn record_query(client_tag: &str, qtype: &str) {
     counter!("dnshub_queries_total", "client" => client_tag.to_string(), "qtype" => qtype.to_string()).increment(1);
+}
+
+/// Record a DNS query attributed to a specific client. Increments
+/// `dnshub_queries_total` with labels `client` (the normalized client tag)
+/// and `qtype`.
+///
+/// This is a convenience wrapper that normalizes the client identity via
+/// [`super::labels::client_to_tag`] before recording, so callers can pass raw
+/// IP/hostname/profile tuples without worrying about label hygiene.
+pub fn record_query_per_client(
+    ip: &str,
+    hostname: Option<&str>,
+    profile: Option<&str>,
+    qtype: &str,
+) {
+    let client_tag = super::labels::client_to_tag(ip, hostname, profile);
+    record_query(&client_tag, qtype);
 }
 
 // ---------------------------------------------------------------------------
@@ -74,6 +92,88 @@ pub fn record_blocklist_hit(category: &str, source: &str) {
 /// (e.g. `"cache"`, `"upstream"`, `"blocklist"`).
 pub fn record_error(error_type: &str, tier: &str) {
     counter!("dnshub_errors_total", "error_type" => error_type.to_string(), "tier" => tier.to_string()).increment(1);
+}
+
+// ---------------------------------------------------------------------------
+// Per-client policy decisions (PRD section 4.6)
+// ---------------------------------------------------------------------------
+
+/// Record a per-client policy decision. Increments
+/// `dnshub_policy_decisions_total` with labels `client` (the client tag),
+/// `profile` (the profile name), and `decision` (one of `"allowed"`,
+/// `"blocked"`, `"redirected"`).
+///
+/// The `client` label is normalized via [`super::labels::client_to_tag`] so
+/// raw IPs never appear in the scrape output. The `profile` label is
+/// normalized via [`super::labels::normalize_label`].
+///
+/// # Arguments
+///
+/// * `ip` — Raw client IP (never emitted).
+/// * `hostname` — Client hostname, if known.
+/// * `profile` — Assigned profile name, if any.
+/// * `decision` — The policy decision: `"allowed"`, `"blocked"`, or
+///   `"redirected"`.
+pub fn record_policy_decision(
+    ip: &str,
+    hostname: Option<&str>,
+    profile: Option<&str>,
+    decision: &str,
+) {
+    let client_tag = super::labels::client_to_tag(ip, hostname, profile);
+    let profile_label = super::labels::normalize_label(profile);
+    counter!(
+        "dnshub_policy_decisions_total",
+        "client" => client_tag,
+        "profile" => profile_label,
+        "decision" => decision.to_string()
+    )
+    .increment(1);
+}
+
+/// Record a per-client block decision. Increments
+/// `dnshub_policy_decisions_total` with `decision = "blocked"` and the
+/// normalized client/profile labels.
+///
+/// Convenience wrapper around [`record_policy_decision`].
+pub fn record_block_per_client(ip: &str, hostname: Option<&str>, profile: Option<&str>) {
+    record_policy_decision(ip, hostname, profile, "blocked");
+}
+
+/// Record a per-client upstream error. Increments `dnshub_errors_total` with
+/// labels `error_type` and `tier = "upstream"`, plus a `client` label
+/// normalized via [`super::labels::client_to_tag`].
+///
+/// This extends the basic [`record_error`] with a per-client dimension while
+/// keeping the existing `error_type`/`tier` labels intact.
+pub fn record_upstream_error_per_client(
+    ip: &str,
+    hostname: Option<&str>,
+    profile: Option<&str>,
+    error_type: &str,
+) {
+    let client_tag = super::labels::client_to_tag(ip, hostname, profile);
+    counter!(
+        "dnshub_errors_total",
+        "client" => client_tag,
+        "error_type" => error_type.to_string(),
+        "tier" => "upstream".to_string()
+    )
+    .increment(1);
+}
+
+// ---------------------------------------------------------------------------
+// Active client gauge
+// ---------------------------------------------------------------------------
+
+/// Set the current number of active clients. Sets the
+/// `dnshub_clients_active` gauge.
+///
+/// "Active" is defined as clients that have issued at least one query within
+/// the current reporting window. The value is bounded by the DHCP lease
+/// table, so cardinality is not a concern.
+pub fn set_client_active(count: usize) {
+    gauge!("dnshub_clients_active").set(count as f64);
 }
 
 #[cfg(test)]
@@ -155,5 +255,145 @@ mod tests {
         record_error("timeout", "upstream");
         assert_metric_visible("dnshub_errors_total", r#"error_type="SERVFAIL""#);
         assert_metric_visible("dnshub_errors_total", r#"tier="upstream""#);
+    }
+
+    #[test]
+    fn record_query_per_client_normalizes_tag() {
+        let _ = handle();
+        // Profile takes priority over hostname.
+        record_query_per_client("192.168.1.50", Some("laptop"), Some("kids"), "A");
+        // Hostname used when no profile.
+        record_query_per_client("192.168.1.51", Some("phone"), None, "AAAA");
+        // Unknown when neither is available.
+        record_query_per_client("192.168.1.52", None, None, "MX");
+
+        let out = handle().render();
+        assert!(
+            out.contains(r#"dnshub_queries_total{client="kids",qtype="A"}"#),
+            "expected normalized client tag `kids`, got:\n{out}"
+        );
+        assert!(
+            out.contains(r#"dnshub_queries_total{client="phone",qtype="AAAA"}"#),
+            "expected normalized client tag `phone`, got:\n{out}"
+        );
+        assert!(
+            out.contains(r#"dnshub_queries_total{client="unknown",qtype="MX"}"#),
+            "expected normalized client tag `unknown`, got:\n{out}"
+        );
+        // Raw IP must never appear as a label value.
+        assert!(
+            !out.contains("192.168.1.50"),
+            "raw IP must not appear in metric labels, got:\n{out}"
+        );
+    }
+
+    #[test]
+    fn record_policy_decision_registers_counter_with_labels() {
+        let _ = handle();
+        record_policy_decision("10.0.0.1", Some("laptop"), Some("kids"), "allowed");
+        record_policy_decision("10.0.0.2", Some("phone"), Some("kids"), "blocked");
+        record_policy_decision("10.0.0.3", Some("tablet"), Some("guest"), "redirected");
+
+        let out = handle().render();
+        assert!(
+            out.contains("dnshub_policy_decisions_total"),
+            "expected policy decisions counter, got:\n{out}"
+        );
+        assert!(
+            out.contains(r#"client="kids""#),
+            "expected client label `kids`, got:\n{out}"
+        );
+        assert!(
+            out.contains(r#"profile="kids""#),
+            "expected profile label `kids`, got:\n{out}"
+        );
+        assert!(
+            out.contains(r#"decision="allowed""#),
+            "expected decision label `allowed`, got:\n{out}"
+        );
+        assert!(
+            out.contains(r#"decision="blocked""#),
+            "expected decision label `blocked`, got:\n{out}"
+        );
+        assert!(
+            out.contains(r#"decision="redirected""#),
+            "expected decision label `redirected`, got:\n{out}"
+        );
+        // Raw IPs must not leak.
+        assert!(
+            !out.contains("10.0.0.1"),
+            "raw IP must not appear in policy decision labels, got:\n{out}"
+        );
+    }
+
+    #[test]
+    fn record_policy_decision_unknown_client_uses_sentinel() {
+        let _ = handle();
+        record_policy_decision("10.0.0.99", None, None, "allowed");
+        let out = handle().render();
+        assert!(
+            out.contains(r#"client="unknown""#),
+            "expected `unknown` client tag, got:\n{out}"
+        );
+        assert!(
+            out.contains(r#"profile="unknown""#),
+            "expected `unknown` profile label, got:\n{out}"
+        );
+    }
+
+    #[test]
+    fn record_block_per_client_records_blocked_decision() {
+        let _ = handle();
+        record_block_per_client("10.0.0.5", Some("tv"), Some("iot"));
+        let out = handle().render();
+        assert!(
+            out.contains(r#"dnshub_policy_decisions_total{client="iot",profile="iot",decision="blocked"}"#),
+            "expected blocked decision for iot client, got:\n{out}"
+        );
+    }
+
+    #[test]
+    fn record_upstream_error_per_client_registers_with_client_label() {
+        let _ = handle();
+        record_upstream_error_per_client("10.0.0.10", Some("desktop"), Some("parents"), "timeout");
+        let out = handle().render();
+        assert!(
+            out.contains("dnshub_errors_total"),
+            "expected errors counter, got:\n{out}"
+        );
+        assert!(
+            out.contains(r#"client="parents""#),
+            "expected client label `parents`, got:\n{out}"
+        );
+        assert!(
+            out.contains(r#"error_type="timeout""#),
+            "expected error_type label `timeout`, got:\n{out}"
+        );
+        assert!(
+            out.contains(r#"tier="upstream""#),
+            "expected tier label `upstream`, got:\n{out}"
+        );
+        assert!(
+            !out.contains("10.0.0.10"),
+            "raw IP must not appear in upstream error labels, got:\n{out}"
+        );
+    }
+
+    #[test]
+    fn set_client_active_sets_gauge() {
+        let _ = handle();
+        set_client_active(7);
+        let out = handle().render();
+        assert!(
+            out.contains("dnshub_clients_active 7"),
+            "expected gauge value 7, got:\n{out}"
+        );
+        // Verify zero also works (last write wins for gauges).
+        set_client_active(0);
+        let out = handle().render();
+        assert!(
+            out.contains("dnshub_clients_active 0"),
+            "expected gauge value 0, got:\n{out}"
+        );
     }
 }
