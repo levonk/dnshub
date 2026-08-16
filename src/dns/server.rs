@@ -1,11 +1,13 @@
-//! hickory-server `Server` setup (UDP + TCP).
+//! hickory-server `Server` setup (UDP + TCP + DoT).
 //!
 //! In hickory-server 0.26 the old `ServerFuture` was renamed to
 //! [`Server`](hickory_server::server::Server). [`DnshubServer`] owns the
-//! `Server<DnshubHandler>`, registers bound UDP/TCP sockets, and drives
-//! `block_until_done`. Graceful shutdown is triggered via the server's
-//! shutdown token (wired to Ctrl+C in [`crate`]'s `main`).
+//! `Server<DnshubHandler>`, registers bound UDP/TCP sockets (and, when TLS is
+//! enabled, DoT TLS listeners via [`DotServer`](crate::dns::dot::DotServer)),
+//! and drives `block_until_done`. Graceful shutdown is triggered via the
+//! server's shutdown token (wired to Ctrl+C in [`crate`]'s `main`).
 
+use crate::dns::dot::DotServer;
 use crate::dns::DnshubHandler;
 use hickory_server::server::Server;
 use std::net::SocketAddr;
@@ -48,6 +50,23 @@ impl DnshubServer {
             .register_listener(listener, TCP_TIMEOUT, TCP_RESPONSE_BUFFER_SIZE);
         info!(addr = %bound, "registered TCP listener");
         Ok(bound)
+    }
+
+    /// Register DoT (DNS-over-TLS) listeners from a pre-built [`DotServer`].
+    ///
+    /// The TLS listeners are registered on the *same* underlying
+    /// [`Server<DnshubHandler>`] as the UDP/TCP listeners, so DoT clients are
+    /// served by the identical handler chain (policy, blocklists, forwarding).
+    /// Returns the bound socket addresses in order.
+    ///
+    /// Call this only when `[server.tls].enabled` is `true` and the cert/key
+    /// files are readable — [`DotServer::from_config`] fails fast on invalid
+    /// TLS material so the caller can exit gracefully with a clear error.
+    pub async fn register_tls(
+        &mut self,
+        dot: &DotServer,
+    ) -> std::io::Result<Vec<SocketAddr>> {
+        dot.register_into(&mut self.server).await
     }
 
     /// Run the server until `shutdown` is cancelled, then shut down gracefully.

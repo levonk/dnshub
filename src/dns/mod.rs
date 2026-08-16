@@ -29,6 +29,7 @@
 //! queries or [`MiddlewareAction::Continue`] to let the request proceed.
 
 pub mod caching;
+pub mod dot;
 pub mod ecs_strip;
 pub mod forwarding;
 pub mod rate_limit;

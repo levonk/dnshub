@@ -12,6 +12,7 @@
 use dnshub::config::{
     ConfigStore, DnshubConfig, HotReloadManager, HotReloadPaths, UpstreamConfig,
 };
+use dnshub::dns::dot::{DotServer, log_tls_load_error};
 use dnshub::dns::forwarding::ForwardingHandler;
 use dnshub::dns::server::DnshubServer;
 use dnshub::dns::DnshubHandler;
@@ -71,6 +72,36 @@ async fn main() {
         if let Err(e) = server.register_tcp(addr).await {
             error!(addr = %addr, error = %e, "failed to bind TCP listener");
             process::exit(1);
+        }
+    }
+
+    // Start the DoT (DNS-over-TLS) server on :853 when [server.tls].enabled.
+    // The TLS cert/key are loaded from the configured paths (reusing existing
+    // Traefik/ACME certs mounted into the container — PRD §4.7). DoT clients
+    // are served by the same DnshubHandler as UDP/TCP, so per-client policy,
+    // blocklists, and forwarding apply identically.
+    if let Some(tls) = &config_store.load_full().server.tls {
+        if tls.enabled {
+            match DotServer::from_config(tls) {
+                Ok(dot) => match server.register_tls(&dot).await {
+                    Ok(bound) => {
+                        for addr in &bound {
+                            info!(addr = %addr, "DoT listener ready");
+                        }
+                    }
+                    Err(e) => {
+                        error!(error = %e, "failed to bind DoT listener");
+                        process::exit(1);
+                    }
+                },
+                Err(e) => {
+                    log_tls_load_error(&e);
+                    error!(error = %e, "failed to initialize DoT server");
+                    process::exit(1);
+                }
+            }
+        } else {
+            info!("[server.tls].enabled is false — DoT server disabled");
         }
     }
 
