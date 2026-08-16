@@ -1,14 +1,13 @@
 //! DHCP server (v4 + v6) using `dhcproto`.
 //!
-//! This module is the root for all DHCP functionality. Phase 04 story
-//! 04-001 implements the DHCPv4 server core:
+//! This module is the root for all DHCP functionality. Phase 04 stories
+//! implement the DHCPv4 and DHCPv6 server cores, RA/SLAAC, MAC blocklist,
+//! DDNS, PXE, relay, and audit log.
 //!
 //! - [`v4`] — DHCPv4 server, state machine, pool allocator, options
-//!   builder, and SQLite lease store.
-//!
-//! DHCPv6 (story 04-002), RA/SLAAC (04-003), MAC blocklist (04-004),
-//! DDNS (04-005), PXE (04-006), relay (04-007), and audit log (04-008)
-//! are implemented in later stories.
+//!   builder, and SQLite lease store (story 04-001).
+//! - [`v6`] — DHCPv6 server, state machine, IA_NA, DUID, options, and
+//!   SQLite lease store (story 04-002).
 //!
 //! ## Architecture
 //!
@@ -26,3 +25,4 @@
 //! ```
 
 pub mod v4;
+pub mod v6;
