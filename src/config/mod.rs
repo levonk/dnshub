@@ -476,6 +476,13 @@ pub struct TracingConfig {
     pub endpoint: String,
     #[serde(default = "default_trace_sample_rate")]
     pub sample_rate: f64,
+    /// Service name reported to the tracing backend (defaults to "dnshub").
+    #[serde(default = "default_tracing_service_name")]
+    pub service_name: String,
+}
+
+fn default_tracing_service_name() -> String {
+    "dnshub".to_string()
 }
 
 fn default_trace_sample_rate() -> f64 {

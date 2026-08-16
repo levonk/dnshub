@@ -37,6 +37,8 @@ pub mod query_log;
 pub mod api;
 // TODO: implemented in later stories
 pub mod frontend;
+// Structured JSON logging + Jaeger tracing (story 05-002).
+pub mod observability;
 
 /// Crate version (mirrors the Cargo.toml `version` field at build time).
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
