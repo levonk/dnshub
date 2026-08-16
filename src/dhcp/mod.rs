@@ -27,3 +27,7 @@
 pub mod v4;
 pub mod v6;
 pub mod ra;
+pub mod classification;
+pub mod mac_blocklist;
+pub mod options;
+pub mod pool_options;

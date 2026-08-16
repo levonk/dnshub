@@ -12,6 +12,7 @@
 //! `blocklists.toml` shape (PRD lines 1480-1558) is `[[sources]]` plus
 //! `[storage]`.
 
+mod dhcp;
 mod hot_reload;
 mod validation;
 
@@ -23,6 +24,11 @@ use std::sync::Arc;
 
 pub use hot_reload::HotReloadManager;
 pub use validation::{validate_blocklists, validate_config};
+
+pub use dhcp::{
+    ClassifyConfig, ClassifyMatch, DhcpConfig, DhcpPoolConfig, MacBlocklistConfig,
+    StaticLeaseConfig,
+};
 
 /// Errors that can occur while loading or validating configuration.
 #[derive(Debug)]
@@ -383,59 +389,6 @@ impl UpstreamConfig {
 // ---------------------------------------------------------------------------
 // Reserved sections for later stories (defined so the config parses cleanly).
 // ---------------------------------------------------------------------------
-
-/// `[dhcp]` — DHCP server (story 04-001+).
-///
-/// The flat fields (`enabled`, `interface`, `listen`, `pool_start`,
-/// `pool_end`, `subnet`, `router`, `domain`, `lease_time_hours`,
-/// `ntp_server`) are the legacy single-pool config from story 01-004.
-/// The `v4` field holds the structured multi-pool config introduced in
-/// story 04-001 (see [`crate::dhcp::v4::config::DhcpV4Config`]). When
-/// `v4` is populated, the DHCPv4 server uses it; the flat fields are
-/// kept for backward compatibility with existing configs.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct DhcpConfig {
-    #[serde(default)]
-    pub enabled: bool,
-    /// Network interface to bind the DHCP listener to, e.g. `"eth0"`.
-    #[serde(default)]
-    pub interface: String,
-    /// DHCP listen address, e.g. `"0.0.0.0:67"`.
-    #[serde(default)]
-    pub listen: String,
-    /// First address in the dynamic pool, e.g. `"192.168.1.100"`.
-    #[serde(default)]
-    pub pool_start: String,
-    /// Last address in the dynamic pool, e.g. `"192.168.1.200"`.
-    #[serde(default)]
-    pub pool_end: String,
-    /// Subnet mask, e.g. `"255.255.255.0"`.
-    #[serde(default)]
-    pub subnet: String,
-    /// Default gateway/router option, e.g. `"192.168.1.1"`.
-    #[serde(default)]
-    pub router: String,
-    /// Domain name option, e.g. `"levonk.com"`.
-    #[serde(default)]
-    pub domain: String,
-    /// Lease duration in hours.
-    #[serde(default)]
-    pub lease_time_hours: u32,
-    /// NTP server option, e.g. `"172.20.255.55"`.
-    #[serde(default)]
-    pub ntp_server: String,
-    /// Structured DHCPv4 config (story 04-001): multiple pools, static
-    /// leases, arbitrary options. When present, the DHCPv4 server uses
-    /// this instead of the flat fields above.
-    #[serde(default)]
-    pub v4: crate::dhcp::v4::config::DhcpV4Config,
-
-    /// `[dhcp.v6.ra]` — IPv6 Router Advertisement / SLAAC config
-    /// (story 04-003). When `Some` and `enabled`, the RA sender
-    /// transmits periodic RAs with RDNSS/DNSSL options.
-    #[serde(default)]
-    pub ra: Option<crate::dhcp::ra::RaConfig>,
-}
 
 /// `[rate_limit]` — token bucket rate limiting (story 03-004). Reserved.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

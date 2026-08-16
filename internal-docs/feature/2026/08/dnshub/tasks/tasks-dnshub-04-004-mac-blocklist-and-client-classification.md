@@ -7,7 +7,7 @@ prd_file: "internal-docs/feature/2026/08/dnshub/feat-202608110000-dnshub.md"
 phase: 4
 parallel_id: 4
 branch: "feature/current/dnshub/story-04-004-mac-blocklist-and-client-classification"
-status: "todo"
+status: "done"
 assignee: ""
 reviewer: ""
 dependencies: ["01-004"]
@@ -66,19 +66,19 @@ Implement MAC blocklist (refuse DHCP to specific MAC addresses or OUI vendor pre
 
 ## Sub-Tasks
 
-- [ ] Create src/dhcp/classification/rules.rs with ClassificationRule: VendorClassMatch (prefix on option 60), OuiMatch (first 3 octets), UserClassMatch (exact on option 77)
+- [x] Create src/dhcp/classification/rules.rs with ClassificationRule: VendorClassMatch (prefix on option 60), OuiMatch (first 3 octets), UserClassMatch (exact on option 77)
   **Verify**: `cargo test --lib dhcp::classification::rules` → all pass (match by vendor class, OUI, user class)
-- [ ] Create src/dhcp/classification/mod.rs with ClientClassifier: classify(mac, vendor_class, user_class) -> Option<ProfileName>, iterate rules in order, return first match
+- [x] Create src/dhcp/classification/mod.rs with ClientClassifier: classify(mac, vendor_class, user_class) -> Option<ProfileName>, iterate rules in order, return first match
   **Verify**: `cargo test --lib dhcp::classification` → all pass (multiple rules, first match wins, no match → None)
-- [ ] Create src/dhcp/mac_blocklist.rs with MacBlocklist: is_blocked(mac) -> bool (check full MAC then OUI prefix), add_mac_block(mac_or_oui, reason), remove_mac_block, list_mac_blocks, backed by SQLite
+- [x] Create src/dhcp/mac_blocklist.rs with MacBlocklist: is_blocked(mac) -> bool (check full MAC then OUI prefix), add_mac_block(mac_or_oui, reason), remove_mac_block, list_mac_blocks, backed by SQLite
   **Verify**: `cargo test --lib dhcp::mac_blocklist` → all pass (block by full MAC, block by OUI, unblock, list)
-- [ ] Create src/dhcp/options/arbitrary.rs with ArbitraryOption: parse "N = value" from config, encode to DHCP option bytes, support string, IP, and hex value types
+- [x] Create src/dhcp/options/arbitrary.rs with ArbitraryOption: parse "N = value" from config, encode to DHCP option bytes, support string, IP, and hex value types
   **Verify**: `cargo test --lib dhcp::options::arbitrary` → all pass (parse and encode various option types)
-- [ ] Create src/dhcp/pool_options.rs with PerPoolOptions: merge global options with pool-specific overrides, apply lease_time per-profile (shorter for kids, longer for IoT per PRD lines 427-429)
+- [x] Create src/dhcp/pool_options.rs with PerPoolOptions: merge global options with pool-specific overrides, apply lease_time per-profile (shorter for kids, longer for IoT per PRD lines 427-429)
   **Verify**: `cargo test --lib dhcp::pool_options` → all pass (merge options, override lease time)
-- [ ] Update src/config/dhcp.rs with [[dhcp.mac_blocklist]] (mac, oui, reason), [[dhcp.classify]] (match, profile), per-pool options, lease_time_hours per static lease per PRD lines 810-946
+- [x] Update src/config/dhcp.rs with [[dhcp.mac_blocklist]] (mac, oui, reason), [[dhcp.classify]] (match, profile), per-pool options, lease_time_hours per static lease per PRD lines 810-946
   **Verify**: `cargo build` → exit 0
-- [ ] Run clippy and fmt
+- [x] Run clippy and fmt
   **Verify**: `cargo clippy -- -D warnings && cargo fmt -- --check` → exit 0
 
 ## Relevant Files
@@ -92,15 +92,15 @@ Implement MAC blocklist (refuse DHCP to specific MAC addresses or OUI vendor pre
 
 ## Acceptance Criteria
 
-- [ ] Client classification works by vendor class (option 60 prefix match)
-- [ ] Client classification works by MAC OUI (first 3 octets)
-- [ ] Client classification works by user class (option 77 exact match)
-- [ ] MAC blocklist blocks by full MAC address
-- [ ] MAC blocklist blocks by OUI vendor prefix
-- [ ] Arbitrary DHCP options can be configured and encoded
-- [ ] Per-pool options override global options
-- [ ] Lease time per-profile works (different lease times for different profiles)
-- [ ] All tests pass, clippy clean, fmt clean
+- [x] Client classification works by vendor class (option 60 prefix match)
+- [x] Client classification works by MAC OUI (first 3 octets)
+- [x] Client classification works by user class (option 77 exact match)
+- [x] MAC blocklist blocks by full MAC address
+- [x] MAC blocklist blocks by OUI vendor prefix
+- [x] Arbitrary DHCP options can be configured and encoded
+- [x] Per-pool options override global options
+- [x] Lease time per-profile works (different lease times for different profiles)
+- [x] All tests pass, clippy clean, fmt clean
 
 ## Test Plan
 
@@ -130,9 +130,9 @@ Implement MAC blocklist (refuse DHCP to specific MAC addresses or OUI vendor pre
 
 ## Definition of Done
 
-- [ ] All verification commands from sub-tasks pass
-- [ ] Code, tests, docs updated; CI green
-- [ ] No files outside in-scope list are modified (`git status`)
+- [x] All verification commands from sub-tasks pass
+- [x] Code, tests, docs updated; CI green
+- [x] No files outside in-scope list are modified (`git status`)
 
 ## STOP Conditions
 
@@ -155,3 +155,4 @@ Stop and report if:
 ## Changelog
 
 - 2026-08-16: initialized story file
+- 2026-08-16: implemented story 04-004 — added ClassificationRule (vendor class prefix, OUI, user class exact) and ClientClassifier (first-match-wins), MacBlocklist backed by SQLite dhcp_mac_blocklist table (full MAC + OUI prefix, add/remove/list), ArbitraryOption (string/IP/hex value inference → dhcproto DhcpOption::Unknown), PerPoolOptions (global+pool merge, per-profile lease-time precedence), and expanded DhcpConfig with [[dhcp.pools]], [[dhcp.mac_blocklist]], [[dhcp.classify]], [[dhcp.static]] (config/dhcp.rs moved to its own submodule and re-exported). 54 new unit tests, all passing.
