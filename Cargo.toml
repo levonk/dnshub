@@ -1,0 +1,70 @@
+[package]
+name = "dnshub"
+version = "0.1.0"
+edition = "2021"
+description = "DNS orchestrator: ad/tracker blocking, per-client policy, tiered fallback, DHCP, and observability in a single Rust service"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[lib]
+name = "dnshub"
+path = "src/lib.rs"
+
+[[bin]]
+name = "dnshub"
+path = "src/main.rs"
+
+[dependencies]
+# DNS framework (hickory-server 0.26: Authority -> ZoneHandler rename).
+# `resolver` enables ForwardZoneHandler (the 0.26 name for ForwardAuthority).
+# `tls-ring`/`https-ring` enable DoT/DoH serving. `metrics` enables the metrics facade.
+hickory-server = { version = "0.26", features = ["tls-ring", "https-ring", "metrics", "resolver", "blocklist"] }
+hickory-resolver = { version = "0.26", features = ["tls-ring", "https-ring"] }
+hickory-proto = "0.26"
+# hickory-net provides the `Time` trait used by hickory-server's RequestHandler signature.
+hickory-net = "0.26"
+
+# DHCP server
+dhcproto = "0.12"       # DHCP wire format encoding/decoding
+async-trait = "0.1"     # LeaseStore trait abstraction for pluggable storage
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+# tokio-util provides CancellationToken used for graceful shutdown signaling.
+tokio-util = { version = "0.7", features = ["rt"] }
+
+# Blocklist storage
+heed = "0.22"           # LMDB bindings
+fastbloom = "0.1"       # Bloom filter for fast negative path
+arc-swap = "1"          # Atomic hot-swap of blocklist index
+
+# Query log + DHCP lease persistence
+rusqlite = { version = "0.31", features = ["bundled"] }  # embedded SQLite
+
+# Configuration
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+
+# Observability
+metrics = "0.24"
+metrics-exporter-prometheus = "0.18"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
+tracing-opentelemetry = "0.33"  # optional, for Jaeger traces
+opentelemetry = "0.27"          # optional, for Jaeger traces
+
+# HTTP server (for metrics + frontend API + DoH)
+axum = "0.7"
+tower-http = { version = "0.5", features = ["cors"] }
+
+# TLS (for DoT/DoH server)
+rustls = "0.23"
+tokio-rustls = "0.26"
+
+# Utilities
+ipnet = "2"             # CIDR matching for client policy
+reqwest = { version = "0.12", features = ["json"] }  # blocklist fetcher
+flate2 = "1"            # gzip decompression of blocklist downloads
+regex = "1"             # Adblock Plus filter parsing
+once_cell = "1"
+parking_lot = "0.12"    # faster mutexes for rate limiter

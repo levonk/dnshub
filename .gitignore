@@ -15,3 +15,14 @@ Thumbs.db
 
 # Devbox
 .devbox/
+
+# Rust
+/target/
+**/*.rs.bk
+*.pdb
+
+# dnshub runtime artifacts
+*.lmdb
+*.lmdb-lock
+dnshub.db
+dnshub.db-*
