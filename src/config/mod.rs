@@ -516,7 +516,7 @@ fn default_log_format() -> String {
 }
 
 /// `[tracing]` — Jaeger tracing (story 05-002). Reserved.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TracingConfig {
     #[serde(default)]
     pub enabled: bool,
@@ -527,6 +527,17 @@ pub struct TracingConfig {
     /// Service name reported to the tracing backend (defaults to "dnshub").
     #[serde(default = "default_tracing_service_name")]
     pub service_name: String,
+}
+
+impl Default for TracingConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            endpoint: String::new(),
+            sample_rate: default_trace_sample_rate(),
+            service_name: default_tracing_service_name(),
+        }
+    }
 }
 
 fn default_tracing_service_name() -> String {
