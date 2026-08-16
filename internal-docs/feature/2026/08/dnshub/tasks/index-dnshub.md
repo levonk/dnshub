@@ -17,10 +17,10 @@
 | 02-002 | Category bitmap in LMDB + Adblock Plus parser | 02 | [x] Done |  | true | 01-002 | — | blocklist, parser | feature/current/dnshub/story-02-002-category-bitmap-and-adblock-parser |
 | 02-003 | Per-client metrics | 02 | [x] Done |  | true | 01-003 | 05-001 | metrics | feature/current/dnshub/story-02-003-per-client-metrics |
 | 02-004 | Hot-reload (SIGHUP) for policy + blocklists | 02 | [x] Done |  | true | 01-002, 01-004 | 06-003 | config, hot-reload | feature/current/dnshub/story-02-004-hot-reload-sighup |
-| 03-001 | TieredForwardHandler with per-tier timeout | 03 | [ ] Todo |  | true | 01-001 | — | dns-server, forwarding | feature/current/dnshub/story-03-001-tiered-forward-handler |
-| 03-002 | ServeStaleHandler (RFC 8767) | 03 | [ ] Todo |  | true | 01-001 | — | dns-server, cache | feature/current/dnshub/story-03-002-serve-stale-handler |
-| 03-003 | EcsStripHandler | 03 | [ ] Todo |  | true | 01-001 | — | dns-server, ecs | feature/current/dnshub/story-03-003-ecs-strip-handler |
-| 03-004 | RateLimitHandler (token bucket) | 03 | [ ] Todo |  | true | 01-001 | — | dns-server, rate-limit | feature/current/dnshub/story-03-004-rate-limit-handler |
+| 03-001 | TieredForwardHandler with per-tier timeout | 03 | [~] In-Progress |  | true | 01-001 | — | dns-server, forwarding | feature/current/dnshub/story-03-001-tiered-forward-handler |
+| 03-002 | ServeStaleHandler (RFC 8767) | 03 | [~] In-Progress |  | true | 01-001 | — | dns-server, cache | feature/current/dnshub/story-03-002-serve-stale-handler |
+| 03-003 | EcsStripHandler | 03 | [~] In-Progress |  | true | 01-001 | — | dns-server, ecs | feature/current/dnshub/story-03-003-ecs-strip-handler |
+| 03-004 | RateLimitHandler (token bucket) | 03 | [~] In-Progress |  | true | 01-001 | — | dns-server, rate-limit | feature/current/dnshub/story-03-004-rate-limit-handler |
 | 04-001 | DHCPv4 server core (lease store, state machine, pool allocator, options) | 04 | [ ] Todo |  | true | 01-004 | 05-004 | dhcp, dhcpv4 | feature/current/dnshub/story-04-001-dhcpv4-server-core |
 | 04-002 | DHCPv6 server core (lease store, state machine, IA_NA, options) | 04 | [ ] Todo |  | true | 01-004 | 05-004 | dhcp, dhcpv6 | feature/current/dnshub/story-04-002-dhcpv6-server-core |
 | 04-003 | RA/SLAAC (Router Advertisements with RDNSS/DNSSL) | 04 | [ ] Todo |  | true | 01-004 | — | dhcp, ra-slaac | feature/current/dnshub/story-04-003-ra-slaac-router-advertisements |
