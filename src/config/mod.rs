@@ -389,6 +389,9 @@ impl UpstreamConfig {
 /// This is a config skeleton: the fields mirror the PRD `dnshub.toml`
 /// example (lines 1392-1402) so the main config parses cleanly, but the
 /// DHCP server logic itself is implemented in Phase 04 stories.
+///
+/// The `ra` field maps to the `[dhcp.v6.ra]` section (PRD lines 840-848)
+/// and configures IPv6 Router Advertisements for SLAAC (story 04-003).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct DhcpConfig {
     #[serde(default)]
@@ -420,6 +423,11 @@ pub struct DhcpConfig {
     /// NTP server option, e.g. `"172.20.255.55"`.
     #[serde(default)]
     pub ntp_server: String,
+    /// `[dhcp.v6.ra]` — IPv6 Router Advertisement / SLAAC config
+    /// (story 04-003). When `Some` and `enabled`, the RA sender
+    /// transmits periodic RAs with RDNSS/DNSSL options.
+    #[serde(default)]
+    pub ra: Option<crate::dhcp::ra::RaConfig>,
 }
 
 /// `[rate_limit]` — token bucket rate limiting (story 03-004). Reserved.
