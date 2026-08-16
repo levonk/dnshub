@@ -31,6 +31,7 @@
 pub mod caching;
 pub mod forwarding;
 pub mod server;
+pub mod tiered_forward;
 
 use async_trait::async_trait;
 use hickory_net::runtime::Time;
