@@ -33,12 +33,12 @@
 | 04-010 | DoH server (HTTPS listener) | 04 | [~] In-Progress |  | true | 01-001 | — | dns-server, doh, https | feature/current/dnshub/story-04-010-doh-server-https |
 | 04-011 | ClientResolver DHCP integration (IP to hostname to profile from lease tables) | 04 | [~] In-Progress |  | true | 02-001 | — | policy, client-resolver, dhcp | feature/current/dnshub/story-04-011-client-resolver-dhcp-integration |
 | 04-012 | Docker macvlan network + TLS cert Ansible | 04 | [~] In-Progress |  | true | 01-005 | 06-004 | infra, docker, ansible | feature/current/dnshub/story-04-012-docker-macvlan-tls-ansible |
-| 05-001 | Full Prometheus metrics (all labels from PRD section 4.6) | 05 | [ ] Todo |  | true | 01-003, 02-003 | — | metrics, prometheus | feature/current/dnshub/story-05-001-full-prometheus-metrics |
-| 05-002 | tracing JSON logs to Loki + Jaeger traces | 05 | [ ] Todo |  | true | 01-001 | — | observability, tracing, jaeger | feature/current/dnshub/story-05-002-tracing-json-jaeger |
-| 05-003 | Query log SQLite ring buffer + QueryLogHandler | 05 | [ ] Todo |  | true | 01-001 | — | query-log, sqlite | feature/current/dnshub/story-05-003-query-log-sqlite-ring-buffer |
+| 05-001 | Full Prometheus metrics (all labels from PRD section 4.6) | 05 | [~] In-Progress |  | true | 01-003, 02-003 | — | metrics, prometheus | feature/current/dnshub/story-05-001-full-prometheus-metrics |
+| 05-002 | tracing JSON logs to Loki + Jaeger traces | 05 | [~] In-Progress |  | true | 01-001 | — | observability, tracing, jaeger | feature/current/dnshub/story-05-002-tracing-json-jaeger |
+| 05-003 | Query log SQLite ring buffer + QueryLogHandler | 05 | [~] In-Progress |  | true | 01-001 | — | query-log, sqlite | feature/current/dnshub/story-05-003-query-log-sqlite-ring-buffer |
 | 05-004 | REST API (axum, all endpoints from PRD section 4.9) | 05 | [ ] Todo |  | true | 01-001, 04-001, 04-002 | — | api, axum | feature/current/dnshub/story-05-004-rest-api-axum |
-| 05-005 | Grafana dashboard (metrics + Loki logs) | 05 | [ ] Todo |  | true | 01-003 | — | observability, grafana | feature/current/dnshub/story-05-005-grafana-dashboard |
-| 05-006 | NextJS frontend (config + status + DHCP + query log viewer) | 05 | [ ] Todo |  | true | — | — | frontend, nextjs | feature/current/dnshub/story-05-006-nextjs-frontend |
+| 05-005 | Grafana dashboard (metrics + Loki logs) | 05 | [~] In-Progress |  | true | 01-003 | — | observability, grafana | feature/current/dnshub/story-05-005-grafana-dashboard |
+| 05-006 | NextJS frontend (config + status + DHCP + query log viewer) | 05 | [~] In-Progress |  | true | — | — | frontend, nextjs | feature/current/dnshub/story-05-006-nextjs-frontend |
 | 06-001 | Performance tuning (SO_REUSEPORT, buffer sizes) | 06 | [ ] Todo |  | true | 01-001 | — | dns-server, performance | feature/current/dnshub/story-06-001-performance-tuning-so-reuseport |
 | 06-002 | Blocklist source failure handling (backoff, circuit breaker) | 06 | [ ] Todo |  | true | 01-002 | — | blocklist, reliability | feature/current/dnshub/story-06-002-blocklist-failure-handling-backoff |
 | 06-003 | Hot-reload testing under load | 06 | [ ] Todo |  | true | 02-004, 01-002 | — | testing, hot-reload | feature/current/dnshub/story-06-003-hot-reload-testing-under-load |
