@@ -1,0 +1,44 @@
+#!/usr/sbin/nft -f
+#
+# nftables-dnshub.j2 — nftables TPROXY redirect rules for dnshub.
+#
+# Rendered by the dns-dnshub Ansible role during the migration cutover
+# (PRD section 6.3, step 4). This ruleset redirects client DNS traffic
+# (UDP/TCP port 53) to the dnshub container via TPROXY so that dnshub
+# receives queries transparently without clients being reconfigured.
+#
+# The redirect target is the dnshub IP. During the parallel-deployment
+# phase dnshub runs on the temp IP ({{ dnshub_migration_temp_ip }}); after
+# cutover dnshub moves to the final IP ({{ dnshub_migration_final_ip }}).
+# This template targets the final IP by default — override
+# `dnshub_migration_nft_target_ip` to point at the temp IP during testing.
+#
+# Variables (from vars/migration.yml):
+#   dnshub_migration_nft_table        — nftables table name
+#   dnshub_migration_nft_chain        — chain name inside the table
+#   dnshub_migration_nft_mark         — fwmark for TPROXY-routed packets
+#   dnshub_migration_nft_tproxy_port  — DNS port to redirect (53)
+#   dnshub_migration_nft_target_ip    — dnshub IP to redirect to
+#
+# Rollback: restore the previous AdGuard ruleset from
+#   {{ dnshub_migration_nft_backup_path }}
+# using `nft -f <backup>`.
+
+flush table ip {{ dnshub_migration_nft_table }}
+
+table ip {{ dnshub_migration_nft_table }} {
+    chain {{ dnshub_migration_nft_chain }} {
+        type filter hook prerouting priority mangle; policy accept;
+
+        # Mark DNS traffic (UDP/TCP port {{ dnshub_migration_nft_tproxy_port }})
+        # so it can be routed locally to the TPROXY listener on dnshub.
+        udp dport {{ dnshub_migration_nft_tproxy_port }} tproxy to {{ dnshub_migration_nft_target_ip }}:{{ dnshub_migration_nft_tproxy_port }} mark set {{ dnshub_migration_nft_mark }}
+        tcp dport {{ dnshub_migration_nft_tproxy_port }} tproxy to {{ dnshub_migration_nft_target_ip }}:{{ dnshub_migration_nft_tproxy_port }} mark set {{ dnshub_migration_nft_mark }}
+    }
+
+    chain divert {
+        # Route marked packets to the local table so TPROXY can deliver them.
+        type filter hook output priority mangle; policy accept;
+        mark {{ dnshub_migration_nft_mark }} meta l4rule accept
+    }
+}

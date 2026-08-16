@@ -1,0 +1,282 @@
+---
+# tasks/migrate.yml — migration tasks for the dns-dnshub role.
+#
+# Implements the PRD section 6.3 migration plan (lines 1687-1694):
+#   1. Deploy dnshub on a temporary IP alongside the existing stack.
+#   2. Run pre-migration checks.
+#   3. Run verification (resolution, blocking, metrics, query log).
+#   4. Back up the existing nftables TPROXY redirect, then switch it to dnshub.
+#   5. Stop the old containers (AdGuard, dnsdist, CoreDNS).
+#   6. Move dnshub to the final IP (.67) and reclaim .49/.51.
+#
+# Each block is tagged so the operator can run individual steps:
+#   --tags precheck,deploy,verify,switch,cleanup,reclaim
+#
+# Rollback is manual (see MIGRATION.md). The old nftables ruleset is backed
+# up before the cutover so it can be restored with `nft -f <backup>`.
+
+# Load migration variables.
+- name: Load migration variables
+  ansible.builtin.include_vars:
+    file: ../vars/migration.yml
+  tags: always
+
+# ===========================================================================
+# Step 0 — Pre-migration checks
+# ===========================================================================
+- name: Render pre-migration check script
+  ansible.builtin.template:
+    src: migration-check.sh.j2
+    dest: /usr/local/sbin/dnshub-migration-check.sh
+    owner: root
+    group: root
+    mode: "0755"
+  tags: precheck
+
+- name: Run pre-migration checks
+  ansible.builtin.command: /usr/local/sbin/dnshub-migration-check.sh
+  register: dnshub_migration_precheck
+  changed_when: false
+  tags: precheck
+
+- name: Show pre-migration check output
+  ansible.builtin.debug:
+    var: dnshub_migration_precheck.stdout_lines
+  tags: precheck
+
+# ===========================================================================
+# Step 1 — Deploy dnshub on the temporary IP alongside the existing stack
+# ===========================================================================
+- name: Deploy dnshub on temporary IP ({{ dnshub_migration_temp_ip }})
+  ansible.builtin.include_role:
+    name: dns-dnshub
+  vars:
+    dnshub_ipv4_address: "{{ dnshub_migration_temp_ip }}"
+  tags: deploy
+
+- name: Wait for dnshub DNS listener on temp IP
+  ansible.builtin.command:
+    argv:
+      - dig
+      - "@{{ dnshub_migration_temp_ip }}"
+      - "{{ dnshub_migration_verify_domain }}"
+      - "+time=5"
+      - "+tries=2"
+  register: dnshub_migration_dns_wait
+  retries: 10
+  delay: 3
+  until: dnshub_migration_dns_wait.rc == 0
+  changed_when: false
+  tags: deploy
+
+# ===========================================================================
+# Step 2 — Verify resolution, blocking, metrics, and query log
+# ===========================================================================
+- name: Run verification script against dnshub on temp IP
+  ansible.builtin.command:
+    argv:
+      - "{{ dnshub_migration_verify_script }}"
+      - "--host"
+      - "{{ dnshub_migration_temp_ip }}"
+      - "--domain"
+      - "{{ dnshub_migration_verify_domain }}"
+      - "--blocked-domain"
+      - "{{ dnshub_migration_verify_blocked_domain }}"
+      - "--blocked-rcode"
+      - "{{ dnshub_migration_verify_blocked_rcode }}"
+  register: dnshub_migration_verify
+  changed_when: false
+  tags: verify
+
+- name: Show verification output
+  ansible.builtin.debug:
+    var: dnshub_migration_verify.stdout_lines
+  tags: verify
+
+- name: Abort if verification failed
+  ansible.builtin.fail:
+    msg: "Migration verification failed. Do NOT proceed to cutover. See MIGRATION.md for rollback."
+  when: dnshub_migration_verify.rc != 0
+  tags: verify
+
+# ===========================================================================
+# Step 3 — Back up existing nftables ruleset
+# ===========================================================================
+- name: Back up existing nftables ruleset
+  ansible.builtin.shell: |
+    set -euo pipefail
+    nft list ruleset > {{ dnshub_migration_nft_backup_path }}
+  args:
+    creates: "{{ dnshub_migration_nft_backup_path }}"
+  tags: switch
+
+- name: Confirm nftables backup exists
+  ansible.builtin.stat:
+    path: "{{ dnshub_migration_nft_backup_path }}"
+  register: dnshub_migration_nft_backup_stat
+  tags: switch
+
+- name: Abort if nftables backup is missing
+  ansible.builtin.fail:
+    msg: "nftables backup not found at {{ dnshub_migration_nft_backup_path }} — refusing to switch redirect."
+  when: not dnshub_migration_nft_backup_stat.stat.exists
+  tags: switch
+
+# ===========================================================================
+# Step 4 — Switch nftables TPROXY redirect from AdGuard to dnshub
+# ===========================================================================
+- name: Render dnshub nftables TPROXY redirect (temp IP)
+  ansible.builtin.template:
+    src: nftables-dnshub.j2
+    dest: "{{ dnshub_migration_nft_ruleset_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  vars:
+    dnshub_migration_nft_target_ip: "{{ dnshub_migration_temp_ip }}"
+  tags: switch
+
+- name: Load dnshub nftables TPROXY redirect
+  ansible.builtin.command:
+    argv:
+      - nft
+      - -f
+      - "{{ dnshub_migration_nft_ruleset_path }}"
+  tags: switch
+
+- name: Verify DNS still resolves after redirect switch
+  ansible.builtin.command:
+    argv:
+      - dig
+      - "@{{ dnshub_migration_temp_ip }}"
+      - "{{ dnshub_migration_verify_domain }}"
+      - "+time=5"
+      - "+tries=2"
+  register: dnshub_migration_post_switch
+  changed_when: false
+  tags: switch
+
+- name: Abort if DNS broke after redirect switch
+  ansible.builtin.fail:
+    msg: "DNS resolution failed after switching nftables redirect. Rollback: nft -f {{ dnshub_migration_nft_backup_path }}"
+  when: dnshub_migration_post_switch.rc != 0
+  tags: switch
+
+# ===========================================================================
+# Step 5 — Stop the old containers (kept for rollback safety)
+# ===========================================================================
+- name: Stop AdGuard Home container
+  community.docker.docker_container:
+    name: "{{ dnshub_migration_old_adguard_container }}"
+    state: stopped
+  tags: cleanup
+
+- name: Stop dnsdist container
+  community.docker.docker_container:
+    name: "{{ dnshub_migration_old_dnsdist_container }}"
+    state: stopped
+  tags: cleanup
+
+- name: Stop CoreDNS container
+  community.docker.docker_container:
+    name: "{{ dnshub_migration_old_coredns_container }}"
+    state: stopped
+  tags: cleanup
+
+- name: Reminder — old containers stopped for rollback safety
+  ansible.builtin.debug:
+    msg: >
+      Old containers ({{ dnshub_migration_old_adguard_container }},
+      {{ dnshub_migration_old_dnsdist_container }},
+      {{ dnshub_migration_old_coredns_container }}) have been STOPPED but
+      not removed. They will be retained for
+      {{ dnshub_migration_old_container_retention_hours }}h for rollback.
+      Remove them manually after confirming dnshub is stable.
+  tags: cleanup
+
+# ===========================================================================
+# Step 6 — Move dnshub to the final IP (.67) and reclaim .49/.51
+# ===========================================================================
+- name: Stop dnshub container before IP move
+  community.docker.docker_container:
+    name: "{{ dnshub_container_name }}"
+    state: stopped
+  tags: reclaim
+
+- name: Redeploy dnshub on final IP ({{ dnshub_migration_final_ip }})
+  ansible.builtin.include_role:
+    name: dns-dnshub
+  vars:
+    dnshub_ipv4_address: "{{ dnshub_migration_final_ip }}"
+  tags: reclaim
+
+- name: Wait for dnshub DNS listener on final IP
+  ansible.builtin.command:
+    argv:
+      - dig
+      - "@{{ dnshub_migration_final_ip }}"
+      - "{{ dnshub_migration_verify_domain }}"
+      - "+time=5"
+      - "+tries=2"
+  register: dnshub_migration_final_wait
+  retries: 10
+  delay: 3
+  until: dnshub_migration_final_wait.rc == 0
+  changed_when: false
+  tags: reclaim
+
+- name: Re-render nftables TPROXY redirect (final IP)
+  ansible.builtin.template:
+    src: nftables-dnshub.j2
+    dest: "{{ dnshub_migration_nft_ruleset_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  vars:
+    dnshub_migration_nft_target_ip: "{{ dnshub_migration_final_ip }}"
+  tags: reclaim
+
+- name: Load final nftables TPROXY redirect
+  ansible.builtin.command:
+    argv:
+      - nft
+      - -f
+      - "{{ dnshub_migration_nft_ruleset_path }}"
+  tags: reclaim
+
+- name: Run final verification against dnshub on final IP
+  ansible.builtin.command:
+    argv:
+      - "{{ dnshub_migration_verify_script }}"
+      - "--host"
+      - "{{ dnshub_migration_final_ip }}"
+      - "--domain"
+      - "{{ dnshub_migration_verify_domain }}"
+      - "--blocked-domain"
+      - "{{ dnshub_migration_verify_blocked_domain }}"
+      - "--blocked-rcode"
+      - "{{ dnshub_migration_verify_blocked_rcode }}"
+  register: dnshub_migration_final_verify
+  changed_when: false
+  tags: reclaim
+
+- name: Show final verification output
+  ansible.builtin.debug:
+    var: dnshub_migration_final_verify.stdout_lines
+  tags: reclaim
+
+- name: Abort if final verification failed
+  ansible.builtin.fail:
+    msg: "Final verification failed on {{ dnshub_migration_final_ip }}. Rollback: restart old containers and nft -f {{ dnshub_migration_nft_backup_path }}"
+  when: dnshub_migration_final_verify.rc != 0
+  tags: reclaim
+
+- name: Migration complete
+  ansible.builtin.debug:
+    msg: >
+      dnshub migration complete. dnshub is now serving on
+      {{ dnshub_migration_final_ip }}. Old IPs
+      {{ dnshub_migration_old_dnsdist_ip }} and
+      {{ dnshub_migration_old_coredns_ip }} are reclaimed (unused).
+      Old containers are stopped and retained for rollback.
+  tags: reclaim
