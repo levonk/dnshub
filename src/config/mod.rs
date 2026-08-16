@@ -389,6 +389,10 @@ impl UpstreamConfig {
 /// This is a config skeleton: the fields mirror the PRD `dnshub.toml`
 /// example (lines 1392-1402) so the main config parses cleanly, but the
 /// DHCP server logic itself is implemented in Phase 04 stories.
+///
+/// Story 04-007 expands this with the `[dhcp.relay]` section (see
+/// [`RelayConfig`]) and the `[[dhcp.pools]]` array (see
+/// [`DhcpPoolConfig`]) for multi-VLAN pool configuration.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct DhcpConfig {
     #[serde(default)]
@@ -420,6 +424,55 @@ pub struct DhcpConfig {
     /// NTP server option, e.g. `"172.20.255.55"`.
     #[serde(default)]
     pub ntp_server: String,
+    /// Relay agent handling (story 04-007). See PRD lines 888-910.
+    #[serde(default)]
+    pub relay: RelayConfig,
+    /// Multi-VLAN pools (`[[dhcp.pools]]`, story 04-007). See PRD lines
+    /// 901-931. Each pool defines an independent lease range, router,
+    /// default profile, and per-pool options for a VLAN/subnet.
+    #[serde(default)]
+    pub pools: Vec<DhcpPoolConfig>,
+}
+
+/// `[dhcp.relay]` — DHCP relay agent handling (story 04-007).
+///
+/// Re-exports the relay config from [`crate::dhcp::relay::config`] so the
+/// TOML deserializer and the relay handler share a single type.
+pub type RelayConfig = crate::dhcp::relay::config::RelayConfig;
+
+/// `[[dhcp.pools]]` — a multi-VLAN DHCP pool (story 04-007).
+///
+/// Each entry describes an independent lease range for a VLAN/subnet,
+/// selected by the relay handler based on `giaddr` (v4) or `link-address`
+/// (v6). See PRD lines 901-931.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct DhcpPoolConfig {
+    /// Human-readable pool name, e.g. `"vlan10-guest"`.
+    #[serde(default)]
+    pub name: String,
+    /// Subnet CIDR, e.g. `"192.168.10.0/24"`.
+    #[serde(default)]
+    pub subnet: String,
+    /// First address in the pool, e.g. `"192.168.10.100"`.
+    #[serde(default)]
+    pub pool_start: String,
+    /// Last address in the pool, e.g. `"192.168.10.200"`.
+    #[serde(default)]
+    pub pool_end: String,
+    /// Default gateway/router for this pool, e.g. `"192.168.10.1"`.
+    /// Matched against `giaddr` by the relay handler for pool selection.
+    #[serde(default)]
+    pub router: String,
+    /// Lease duration in hours for this pool.
+    #[serde(default)]
+    pub lease_time_hours: u32,
+    /// Default policy profile for clients on this VLAN, e.g. `"guest"`.
+    #[serde(default)]
+    pub default_profile: String,
+    /// Per-pool DHCP options (option code → value), e.g.
+    /// `{ 6 = "192.168.10.67", 119 = "levonk.com" }`.
+    #[serde(default)]
+    pub options: std::collections::HashMap<String, String>,
 }
 
 /// `[rate_limit]` — token bucket rate limiting (story 03-004). Reserved.
