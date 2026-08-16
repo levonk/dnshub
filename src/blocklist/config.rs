@@ -130,6 +130,57 @@ fn default_bloom_fpr() -> f64 {
     0.001 // 0.1%
 }
 
+/// Failure-handling configuration for blocklist source fetches.
+///
+/// Controls the circuit breaker threshold and the set of critical sources
+/// that must be loaded before the daemon serves queries on a cold boot
+/// (PRD section 4.3).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FailureHandlingConfig {
+    /// Number of consecutive failures before the circuit breaker opens
+    /// and fetches are suspended (stale data is served). Defaults to 10.
+    #[serde(default = "default_max_consecutive_failures")]
+    pub max_consecutive_failures: u32,
+    /// Circuit breaker cooldown in seconds before transitioning to the
+    /// half-open state. Defaults to 300 (5 minutes).
+    #[serde(default = "default_cooldown_secs")]
+    pub cooldown_secs: u64,
+    /// Source names that are considered critical for boot. On a cold start
+    /// (no cached LMDB), the daemon blocks until all critical sources have
+    /// been fetched at least once. Defaults to `["hagezi-tif", "urlhaus"]`.
+    #[serde(default = "default_critical_sources")]
+    pub critical_sources: Vec<String>,
+}
+
+impl Default for FailureHandlingConfig {
+    fn default() -> Self {
+        Self {
+            max_consecutive_failures: default_max_consecutive_failures(),
+            cooldown_secs: default_cooldown_secs(),
+            critical_sources: default_critical_sources(),
+        }
+    }
+}
+
+fn default_max_consecutive_failures() -> u32 {
+    10
+}
+
+fn default_cooldown_secs() -> u64 {
+    300
+}
+
+fn default_critical_sources() -> Vec<String> {
+    vec!["hagezi-tif".to_string(), "urlhaus".to_string()]
+}
+
+impl FailureHandlingConfig {
+    /// Returns the circuit breaker cooldown as a [`Duration`].
+    pub fn cooldown(&self) -> std::time::Duration {
+        std::time::Duration::from_secs(self.cooldown_secs)
+    }
+}
+
 /// Top-level blocklists configuration (the full `blocklists.toml`).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct BlocklistsConfig {
@@ -139,6 +190,10 @@ pub struct BlocklistsConfig {
     /// Storage configuration.
     #[serde(default)]
     pub storage: StorageConfig,
+    /// Failure handling: circuit breaker threshold, cooldown, critical
+    /// sources for boot blocking.
+    #[serde(default)]
+    pub failure_handling: FailureHandlingConfig,
 }
 
 #[cfg(test)]
@@ -250,5 +305,49 @@ format = "hosts"
             refresh_minutes: None,
         };
         assert_eq!(source.category_bitmap(), 0);
+    }
+
+    #[test]
+    fn test_failure_handling_defaults() {
+        let fh = FailureHandlingConfig::default();
+        assert_eq!(fh.max_consecutive_failures, 10);
+        assert_eq!(fh.cooldown_secs, 300);
+        assert_eq!(fh.critical_sources, vec!["hagezi-tif", "urlhaus"]);
+        assert_eq!(fh.cooldown(), std::time::Duration::from_secs(300));
+    }
+
+    #[test]
+    fn test_failure_handling_from_toml() {
+        let toml_str = r#"
+[[sources]]
+name = "hagezi-tif"
+url = "https://example.com/hagezi.txt"
+format = "domains"
+
+[failure_handling]
+max_consecutive_failures = 5
+cooldown_secs = 120
+critical_sources = ["hagezi-tif"]
+"#;
+        let config: BlocklistsConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.failure_handling.max_consecutive_failures, 5);
+        assert_eq!(config.failure_handling.cooldown_secs, 120);
+        assert_eq!(
+            config.failure_handling.critical_sources,
+            vec!["hagezi-tif"]
+        );
+    }
+
+    #[test]
+    fn test_failure_handling_omitted_uses_defaults() {
+        let toml_str = r#"
+[[sources]]
+name = "x"
+url = "https://example.com/x"
+format = "domains"
+"#;
+        let config: BlocklistsConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.failure_handling.max_consecutive_failures, 10);
+        assert_eq!(config.failure_handling.critical_sources.len(), 2);
     }
 }

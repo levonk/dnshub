@@ -40,4 +40,4 @@ pub use config::MetricsConfig;
 pub use recorder::{init, init_recorder, MetricsError, PrometheusHandle};
 
 #[cfg(test)]
-mod test_support;
+pub(crate) mod test_support;
