@@ -18,6 +18,15 @@
 //!
 //! This keeps the handler chain extensible (new middleware can be added
 //! without modifying existing handlers) while using the supported 0.26 API.
+//!
+//! ## Middleware chain (story 02-001)
+//!
+//! [`PolicyHandler`](crate::policy::PolicyHandler) implements [`DnsMiddleware`]
+//! and is inserted into the chain via [`DnshubHandler::with_middleware_front`]
+//! so it runs before forwarding. It resolves the client IP to a policy profile
+//! via [`ClientResolver`](crate::client_resolver::ClientResolver), evaluates
+//! the queried domain, and returns [`MiddlewareAction::Reject`] for blocked
+//! queries or [`MiddlewareAction::Continue`] to let the request proceed.
 
 pub mod caching;
 pub mod forwarding;
@@ -86,6 +95,16 @@ impl DnshubHandler {
     /// Append a middleware to the end of the chain.
     pub fn with_middleware(mut self, mw: Box<dyn DnsMiddleware>) -> Self {
         self.middleware.push(mw);
+        self
+    }
+
+    /// Prepend a middleware to the front of the chain.
+    ///
+    /// Policy middleware (story 02-001) should be prepended so it runs
+    /// before other middleware (rate limiting, ECS stripping) and can
+    /// short-circuit blocked queries early.
+    pub fn with_middleware_front(mut self, mw: Box<dyn DnsMiddleware>) -> Self {
+        self.middleware.insert(0, mw);
         self
     }
 }

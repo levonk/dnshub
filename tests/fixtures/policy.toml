@@ -1,0 +1,80 @@
+# Test fixture for policy.toml (PRD section 4.5, lines 972-1052).
+# Used by policy config and integration tests.
+
+[default]
+name = "default"
+description = "Default policy for unknown clients"
+blocked_categories = ["ads", "tracker", "malware", "phishing"]
+allowed_categories = []
+custom_allowlist = []
+custom_blocklist = []
+upstream = "tiered"
+log_level = "info"
+
+[policies.parents]
+name = "parents"
+description = "Full access for parents"
+blocked_categories = ["ads", "tracker", "malware", "phishing"]
+allowed_categories = ["all"]
+custom_allowlist = []
+custom_blocklist = []
+upstream = "tiered"
+log_level = "info"
+
+[policies.kids]
+name = "kids"
+description = "Filtered access for children"
+blocked_categories = ["adult", "gambling", "social", "dating", "piracy", "ads", "tracker", "malware", "phishing"]
+allowed_categories = []
+custom_allowlist = ["khanacademy.org", "*.scratch.mit.edu"]
+custom_blocklist = ["tiktok.com", "instagram.com", "snapchat.com"]
+upstream = "tiered"
+log_level = "warn"
+
+[policies.iot]
+name = "iot"
+description = "Locked down for IoT devices"
+blocked_categories = ["ads", "tracker", "telemetry", "social", "streaming", "games", "adult", "gambling", "dating"]
+allowed_categories = []
+custom_allowlist = ["*.vendor.com", "ota.vendor.com"]
+custom_blocklist = []
+upstream = "tiered"
+log_level = "error"
+
+[policies.guest]
+name = "guest"
+description = "Ad-blocking only for guest network"
+blocked_categories = ["ads", "tracker", "malware", "phishing"]
+allowed_categories = ["all"]
+custom_allowlist = []
+custom_blocklist = []
+upstream = "tiered"
+log_level = "info"
+
+# Client → profile mappings
+
+[clients."192.168.1.10"]
+name = "dad-laptop"
+policy = "parents"
+
+[clients."192.168.1.11"]
+name = "mom-phone"
+policy = "parents"
+
+[clients."192.168.1.20"]
+name = "kids-tablet"
+policy = "kids"
+
+[clients."192.168.10.0/24"]
+name = "guest-network"
+policy = "guest"
+
+[clients."192.168.20.0/24"]
+name = "iot-network"
+policy = "iot"
+
+# DHCP lease integration is built-in (see [dhcp] section in dnshub.toml)
+# Static leases defined there automatically map MAC → IP → profile.
+# For dynamic leases, use hostname_map to assign profiles by hostname:
+[dhcp_integration]
+hostname_map = { "kids-tablet" = "kids", "dad-laptop" = "parents" }
