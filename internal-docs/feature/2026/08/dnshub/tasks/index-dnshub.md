@@ -21,18 +21,18 @@
 | 03-002 | ServeStaleHandler (RFC 8767) | 03 | [x] Done |  | true | 01-001 | — | dns-server, cache | feature/current/dnshub/story-03-002-serve-stale-handler |
 | 03-003 | EcsStripHandler | 03 | [x] Done |  | true | 01-001 | — | dns-server, ecs | feature/current/dnshub/story-03-003-ecs-strip-handler |
 | 03-004 | RateLimitHandler (token bucket) | 03 | [x] Done |  | true | 01-001 | — | dns-server, rate-limit | feature/current/dnshub/story-03-004-rate-limit-handler |
-| 04-001 | DHCPv4 server core (lease store, state machine, pool allocator, options) | 04 | [ ] Todo |  | true | 01-004 | 05-004 | dhcp, dhcpv4 | feature/current/dnshub/story-04-001-dhcpv4-server-core |
-| 04-002 | DHCPv6 server core (lease store, state machine, IA_NA, options) | 04 | [ ] Todo |  | true | 01-004 | 05-004 | dhcp, dhcpv6 | feature/current/dnshub/story-04-002-dhcpv6-server-core |
-| 04-003 | RA/SLAAC (Router Advertisements with RDNSS/DNSSL) | 04 | [ ] Todo |  | true | 01-004 | — | dhcp, ra-slaac | feature/current/dnshub/story-04-003-ra-slaac-router-advertisements |
-| 04-004 | MAC blocklist + client classification + per-pool options | 04 | [ ] Todo |  | true | 01-004 | — | dhcp, classification | feature/current/dnshub/story-04-004-mac-blocklist-and-client-classification |
-| 04-005 | DDNS (auto-create/remove DNS records from DHCP leases) | 04 | [ ] Todo |  | true | 01-001 | — | dhcp, ddns | feature/current/dnshub/story-04-005-ddns-auto-dns-from-dhcp |
-| 04-006 | PXE/BOOTP/TFTP server (network boot, per-arch bootfile, iPXE) | 04 | [ ] Todo |  | true | 01-004 | — | dhcp, pxe, tftp | feature/current/dnshub/story-04-006-pxe-bootp-tftp-server |
-| 04-007 | DHCP relay agent + multi-VLAN + Option 82 | 04 | [ ] Todo |  | true | 01-004 | — | dhcp, relay | feature/current/dnshub/story-04-007-dhcp-relay-agent-multi-vlan |
-| 04-008 | Lease audit log + rogue DHCP detection | 04 | [ ] Todo |  | true | 01-004 | — | dhcp, audit, rogue-detection | feature/current/dnshub/story-04-008-lease-audit-log-rogue-detection |
-| 04-009 | DoT server (TLS listener, cert mounting) | 04 | [ ] Todo |  | true | 01-001 | — | dns-server, dot, tls | feature/current/dnshub/story-04-009-dot-server-tls |
-| 04-010 | DoH server (HTTPS listener) | 04 | [ ] Todo |  | true | 01-001 | — | dns-server, doh, https | feature/current/dnshub/story-04-010-doh-server-https |
-| 04-011 | ClientResolver DHCP integration (IP to hostname to profile from lease tables) | 04 | [ ] Todo |  | true | 02-001 | — | policy, client-resolver, dhcp | feature/current/dnshub/story-04-011-client-resolver-dhcp-integration |
-| 04-012 | Docker macvlan network + TLS cert Ansible | 04 | [ ] Todo |  | true | 01-005 | 06-004 | infra, docker, ansible | feature/current/dnshub/story-04-012-docker-macvlan-tls-ansible |
+| 04-001 | DHCPv4 server core (lease store, state machine, pool allocator, options) | 04 | [~] In-Progress |  | true | 01-004 | 05-004 | dhcp, dhcpv4 | feature/current/dnshub/story-04-001-dhcpv4-server-core |
+| 04-002 | DHCPv6 server core (lease store, state machine, IA_NA, options) | 04 | [~] In-Progress |  | true | 01-004 | 05-004 | dhcp, dhcpv6 | feature/current/dnshub/story-04-002-dhcpv6-server-core |
+| 04-003 | RA/SLAAC (Router Advertisements with RDNSS/DNSSL) | 04 | [~] In-Progress |  | true | 01-004 | — | dhcp, ra-slaac | feature/current/dnshub/story-04-003-ra-slaac-router-advertisements |
+| 04-004 | MAC blocklist + client classification + per-pool options | 04 | [~] In-Progress |  | true | 01-004 | — | dhcp, classification | feature/current/dnshub/story-04-004-mac-blocklist-and-client-classification |
+| 04-005 | DDNS (auto-create/remove DNS records from DHCP leases) | 04 | [~] In-Progress |  | true | 01-001 | — | dhcp, ddns | feature/current/dnshub/story-04-005-ddns-auto-dns-from-dhcp |
+| 04-006 | PXE/BOOTP/TFTP server (network boot, per-arch bootfile, iPXE) | 04 | [~] In-Progress |  | true | 01-004 | — | dhcp, pxe, tftp | feature/current/dnshub/story-04-006-pxe-bootp-tftp-server |
+| 04-007 | DHCP relay agent + multi-VLAN + Option 82 | 04 | [~] In-Progress |  | true | 01-004 | — | dhcp, relay | feature/current/dnshub/story-04-007-dhcp-relay-agent-multi-vlan |
+| 04-008 | Lease audit log + rogue DHCP detection | 04 | [~] In-Progress |  | true | 01-004 | — | dhcp, audit, rogue-detection | feature/current/dnshub/story-04-008-lease-audit-log-rogue-detection |
+| 04-009 | DoT server (TLS listener, cert mounting) | 04 | [~] In-Progress |  | true | 01-001 | — | dns-server, dot, tls | feature/current/dnshub/story-04-009-dot-server-tls |
+| 04-010 | DoH server (HTTPS listener) | 04 | [~] In-Progress |  | true | 01-001 | — | dns-server, doh, https | feature/current/dnshub/story-04-010-doh-server-https |
+| 04-011 | ClientResolver DHCP integration (IP to hostname to profile from lease tables) | 04 | [~] In-Progress |  | true | 02-001 | — | policy, client-resolver, dhcp | feature/current/dnshub/story-04-011-client-resolver-dhcp-integration |
+| 04-012 | Docker macvlan network + TLS cert Ansible | 04 | [~] In-Progress |  | true | 01-005 | 06-004 | infra, docker, ansible | feature/current/dnshub/story-04-012-docker-macvlan-tls-ansible |
 | 05-001 | Full Prometheus metrics (all labels from PRD section 4.6) | 05 | [ ] Todo |  | true | 01-003, 02-003 | — | metrics, prometheus | feature/current/dnshub/story-05-001-full-prometheus-metrics |
 | 05-002 | tracing JSON logs to Loki + Jaeger traces | 05 | [ ] Todo |  | true | 01-001 | — | observability, tracing, jaeger | feature/current/dnshub/story-05-002-tracing-json-jaeger |
 | 05-003 | Query log SQLite ring buffer + QueryLogHandler | 05 | [ ] Todo |  | true | 01-001 | — | query-log, sqlite | feature/current/dnshub/story-05-003-query-log-sqlite-ring-buffer |
