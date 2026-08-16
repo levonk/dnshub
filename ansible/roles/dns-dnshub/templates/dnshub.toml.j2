@@ -1,0 +1,81 @@
+# dnshub.toml — rendered by the dns-dnshub Ansible role.
+# Variables come from infra_* inventory vars (see defaults/main.yml).
+
+[server]
+listen = ["{{ dnshub_listen_dns }}", "[::]:53"]
+protocol = ["udp", "tcp"]
+
+[server.tls]
+enabled = true
+listen = ["{{ dnshub_listen_dot }}", "[::]:853"]
+cert = "{{ dnshub_tls_cert }}"
+key = "{{ dnshub_tls_key }}"
+
+[server.doh]
+enabled = true
+listen = ["{{ dnshub_listen_doh }}", "[::]:443"]
+path = "{{ dnshub_doh_path }}"
+cert = "{{ dnshub_tls_cert }}"
+key = "{{ dnshub_tls_key }}"
+
+[dhcp]
+enabled = {{ dnshub_dhcp_enabled | lower }}
+interface = "{{ dnshub_dhcp_interface }}"
+listen = "{{ dnshub_dhcp_listen }}"
+pool_start = "{{ dnshub_dhcp_pool_start }}"
+pool_end = "{{ dnshub_dhcp_pool_end }}"
+subnet = "{{ dnshub_dhcp_subnet }}"
+router = "{{ dnshub_dhcp_router }}"
+domain = "{{ dnshub_dhcp_domain }}"
+lease_time_hours = {{ dnshub_dhcp_lease_time_hours }}
+ntp_server = "{{ dnshub_dhcp_ntp_server }}"
+
+[cache]
+min_ttl = {{ dnshub_cache_min_ttl }}
+max_ttl = {{ dnshub_cache_max_ttl }}
+negative_ttl = {{ dnshub_cache_negative_ttl }}
+serve_stale = {{ dnshub_cache_serve_stale | lower }}
+serve_stale_ttl = {{ dnshub_cache_serve_stale_ttl }}
+max_entries = {{ dnshub_cache_max_entries }}
+
+[rate_limit]
+requests_per_second = {{ dnshub_rate_limit_rps }}
+burst = {{ dnshub_rate_limit_burst }}
+per_client = {{ dnshub_rate_limit_per_client | lower }}
+
+[ecs]
+strip = {{ dnshub_ecs_strip | lower }}
+
+[query_log]
+enabled = {{ dnshub_query_log_enabled | lower }}
+max_entries = {{ dnshub_query_log_max_entries }}
+retention_days = {{ dnshub_query_log_retention_days }}
+
+[metrics]
+listen = "{{ dnshub_listen_metrics }}"
+path = "{{ dnshub_metrics_path }}"
+
+[logging]
+level = "{{ dnshub_log_level }}"
+format = "{{ dnshub_log_format }}"
+
+[tracing]
+enabled = {{ dnshub_tracing_enabled | lower }}
+endpoint = "{{ dnshub_tracing_endpoint }}"
+sample_rate = {{ dnshub_tracing_sample_rate }}
+
+[frontend]
+enabled = {{ dnshub_frontend_enabled | lower }}
+listen = "{{ dnshub_listen_frontend }}"
+static_dir = "{{ dnshub_frontend_static_dir }}"
+
+# Upstream tiers (ordered fallback)
+{% for upstream in dnshub_upstreams %}
+[[upstreams]]
+name = "{{ upstream.name }}"
+address = "{{ upstream.address }}"
+protocol = "{{ upstream.protocol }}"
+timeout_ms = {{ upstream.timeout_ms }}
+tier = {{ upstream.tier }}
+
+{% endfor %}

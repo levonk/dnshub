@@ -1,0 +1,35 @@
+# Build artifacts
+target/
+
+# Version control
+.git/
+.gitignore
+
+# Documentation (not needed in the image)
+internal-docs/
+
+# Frontend node modules (frontend is a static export, built separately)
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+
+# Editor / OS cruft
+.vscode/
+.idea/
+.DS_Store
+
+# Devcontainer and agent tooling
+.devcontainer/
+.agents/
+.claude/
+agent/
+
+# Skills and scripts not needed at build time
+skills-lock.json
+scripts/
+
+# Misc
+.envrc
+devbox.json
+justfile
+.pre-commit-config.yaml

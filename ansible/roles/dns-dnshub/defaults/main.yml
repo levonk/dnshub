@@ -1,0 +1,209 @@
+---
+# defaults/main.yml — default variables for the dns-dnshub role.
+#
+# These reference the infra_* variables defined in the Infrahub inventory
+# (ports.yml, networks.yml, domains.yml, storage.yml). See PRD section 6.2
+# (lines 1657-1684) for the canonical variable names.
+
+# ---------------------------------------------------------------------------
+# Container image
+# ---------------------------------------------------------------------------
+dnshub_image: "localnet-dns-dnshub"
+dnshub_tag: "latest"
+dnshub_container_name: "dnshub"
+dnshub_restart_policy: "unless-stopped"
+
+# ---------------------------------------------------------------------------
+# Network
+# ---------------------------------------------------------------------------
+# The static IP assigned to the dnshub container on the localnet network.
+# Reuses 172.20.255.67 (formerly AdGuard Home). See PRD 6.1.
+dnshub_network: "localnet-network"
+dnshub_ipv4_address: "{{ infra_network_ip_dns_dnshub | default('172.20.255.67') }}"
+
+# ---------------------------------------------------------------------------
+# Ports (PRD 6.1 / 6.2 lines 1657-1674)
+# ---------------------------------------------------------------------------
+dnshub_port_dns_host: "{{ infra_port_dns_dnshub_host | default('53') }}"
+dnshub_port_dns_container: "{{ infra_port_dns_dnshub_container | default('53') }}"
+dnshub_port_dot_host: "{{ infra_port_dns_dnshub_dot_host | default('853') }}"
+dnshub_port_dot_container: "{{ infra_port_dns_dnshub_dot_container | default('853') }}"
+dnshub_port_doh_host: "{{ infra_port_dns_dnshub_doh_host | default('443') }}"
+dnshub_port_doh_container: "{{ infra_port_dns_dnshub_doh_container | default('443') }}"
+dnshub_port_dhcp_host: "{{ infra_port_dns_dnshub_dhcp_host | default('67') }}"
+dnshub_port_dhcp_container: "{{ infra_port_dns_dnshub_dhcp_container | default('67') }}"
+dnshub_port_dhcpv6_host: "{{ infra_port_dns_dnshub_dhcpv6_host | default('547') }}"
+dnshub_port_dhcpv6_container: "{{ infra_port_dns_dnshub_dhcpv6_container | default('547') }}"
+dnshub_port_metrics_host: "{{ infra_port_dns_dnshub_metrics_host | default('9090') }}"
+dnshub_port_metrics_container: "{{ infra_port_dns_dnshub_metrics_container | default('9090') }}"
+dnshub_port_frontend_host: "{{ infra_port_dns_dnshub_frontend_host | default('8080') }}"
+dnshub_port_frontend_container: "{{ infra_port_dns_dnshub_frontend_container | default('8080') }}"
+
+# ---------------------------------------------------------------------------
+# Domain (for Traefik routing to the frontend)
+# ---------------------------------------------------------------------------
+dnshub_domain: "{{ infra_domain_dns_dnshub | default('dns.levonk.com') }}"
+
+# ---------------------------------------------------------------------------
+# Storage (PRD 6.2 lines 1682-1684)
+# ---------------------------------------------------------------------------
+dnshub_data_volume: "{{ infra_storage_dns_dnshub_volume | default('localnet-dns-dnshub-data') }}"
+dnshub_config_dir: "{{ infra_storage_dns_dnshub_config_dir | default('/srv/services/dnshub') }}"
+
+# TLS cert/key paths mounted read-only from the host (Traefik/ACME certs).
+dnshub_tls_cert: "/etc/dnshub/tls/fullchain.pem"
+dnshub_tls_key: "/etc/dnshub/tls/privkey.pem"
+dnshub_tls_host_dir: "/srv/traefik/acme"
+
+# ---------------------------------------------------------------------------
+# Config file locations inside the container
+# ---------------------------------------------------------------------------
+dnshub_config_file: "/etc/dnshub/dnshub.toml"
+dnshub_blocklists_file: "/etc/dnshub/blocklists.toml"
+dnshub_policy_file: "/etc/dnshub/policy.toml"
+
+# ---------------------------------------------------------------------------
+# dnshub runtime settings (used by the config templates)
+# ---------------------------------------------------------------------------
+dnshub_listen_dns: "0.0.0.0:53"
+dnshub_listen_dot: "0.0.0.0:853"
+dnshub_listen_doh: "0.0.0.0:443"
+dnshub_listen_metrics: "0.0.0.0:9090"
+dnshub_listen_frontend: "0.0.0.0:8080"
+dnshub_doh_path: "/dns-query"
+
+# DHCP
+dnshub_dhcp_enabled: true
+dnshub_dhcp_interface: "eth0"
+dnshub_dhcp_listen: "0.0.0.0:67"
+dnshub_dhcp_pool_start: "192.168.1.100"
+dnshub_dhcp_pool_end: "192.168.1.200"
+dnshub_dhcp_subnet: "255.255.255.0"
+dnshub_dhcp_router: "192.168.1.1"
+dnshub_dhcp_domain: "levonk.com"
+dnshub_dhcp_lease_time_hours: 24
+dnshub_dhcp_ntp_server: "172.20.255.55"
+
+# Cache
+dnshub_cache_min_ttl: 60
+dnshub_cache_max_ttl: 86400
+dnshub_cache_negative_ttl: 300
+dnshub_cache_serve_stale: true
+dnshub_cache_serve_stale_ttl: 86400
+dnshub_cache_max_entries: 100000
+
+# Rate limiting
+dnshub_rate_limit_rps: 100
+dnshub_rate_limit_burst: 200
+dnshub_rate_limit_per_client: true
+
+# ECS
+dnshub_ecs_strip: true
+
+# Query log
+dnshub_query_log_enabled: true
+dnshub_query_log_max_entries: 100000
+dnshub_query_log_retention_days: 7
+
+# Metrics
+dnshub_metrics_path: "/metrics"
+
+# Logging
+dnshub_log_level: "info"
+dnshub_log_format: "json"
+
+# Tracing
+dnshub_tracing_enabled: false
+dnshub_tracing_endpoint: "http://jaeger:4317"
+dnshub_tracing_sample_rate: 0.05
+
+# Frontend
+dnshub_frontend_enabled: true
+dnshub_frontend_static_dir: "/etc/dnshub/frontend"
+
+# Upstream tiers (ordered fallback). See PRD section 3.3.
+dnshub_upstreams:
+  - name: "unbound-validator"
+    address: "172.20.255.50:15353"
+    protocol: "udp"
+    timeout_ms: 2000
+    tier: 1
+  - name: "dnscrypt-odoh"
+    address: "172.20.255.52:5053"
+    protocol: "udp"
+    timeout_ms: 3000
+    tier: 2
+  - name: "dnscrypt-anon"
+    address: "172.20.255.53:5053"
+    protocol: "udp"
+    timeout_ms: 3000
+    tier: 3
+  - name: "unbound-tor"
+    address: "172.20.255.54:15353"
+    protocol: "udp"
+    timeout_ms: 5000
+    tier: 4
+  - name: "unbound-root"
+    address: "172.20.255.61:15353"
+    protocol: "udp"
+    timeout_ms: 5000
+    tier: 5
+
+# Blocklist storage
+dnshub_blocklist_storage_type: "lmdb"
+dnshub_blocklist_storage_path: "/var/lib/dnshub/blocklists.lmdb"
+dnshub_blocklist_bloom_filter: true
+dnshub_blocklist_bloom_fpr: 0.001
+
+# Blocklist sources (see blocklists.toml.j2). Override via group/host vars.
+dnshub_blocklist_sources:
+  - name: "easylist"
+    url: "https://easylist.to/easylist/easylist.txt"
+    format: "adblock"
+    categories: ["ads"]
+    refresh_hours: 96
+  - name: "easyprivacy"
+    url: "https://easylist.to/easylist/easyprivacy.txt"
+    format: "adblock"
+    categories: ["tracker"]
+    refresh_hours: 96
+  - name: "hagezi-normal"
+    url: "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/domains-normal.txt"
+    format: "domains"
+    categories: ["ads", "tracker", "malware"]
+    refresh_hours: 24
+  - name: "hagezi-tif"
+    url: "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/domains-tif-medium.txt"
+    format: "domains"
+    categories: ["malware", "phishing"]
+    refresh_hours: 6
+  - name: "urlhaus"
+    url: "https://urlhaus.abuse.ch/downloads/hostfile/"
+    format: "hosts"
+    categories: ["malware"]
+    refresh_minutes: 15
+  - name: "stevenblack-porn"
+    url: "https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/porn/hosts"
+    format: "hosts"
+    categories: ["adult"]
+    refresh_hours: 24
+  - name: "stevenblack-gambling"
+    url: "https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/gambling/hosts"
+    format: "hosts"
+    categories: ["gambling"]
+    refresh_hours: 24
+  - name: "stevenblack-social"
+    url: "https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/social/hosts"
+    format: "hosts"
+    categories: ["social"]
+    refresh_hours: 24
+  - name: "stevenblack-fakenews"
+    url: "https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/fakenews/hosts"
+    format: "hosts"
+    categories: ["fakenews"]
+    refresh_hours: 24
+  - name: "ipfire-gambling"
+    url: "https://www.ipfire.org/dbl/gambling/domains"
+    format: "domains"
+    categories: ["gambling"]
+    refresh_hours: 24

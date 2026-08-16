@@ -1,0 +1,24 @@
+# policy.toml — rendered by the dns-dnshub Ansible role.
+#
+# Per-client policy configuration. Sensitive client mappings (MAC/IP ->
+# profile) should come from vault-encrypted group/host vars, not from
+# defaults. This template is only rendered when dnshub_policy_enabled is
+# true (see tasks/main.yml).
+#
+# NOTE: The full policy.toml schema is defined in story 02-001. This stub
+# provides the minimal structure so the Ansible role can deploy it now and
+# be extended later.
+
+[profiles]
+# Example profiles. Override via dnshub_policy_profiles in host vars.
+# [[profiles]]
+# name = "kids"
+# block_categories = ["ads", "tracker", "adult", "gambling", "social"]
+# upstream_tier = 1
+# lease_time_hours = 1
+
+[clients]
+# Example client mappings. Override via dnshub_policy_clients in host vars.
+# [[clients]]
+# match = "192.168.1.50"
+# profile = "parents"
