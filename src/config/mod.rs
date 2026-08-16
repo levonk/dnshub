@@ -15,6 +15,9 @@
 mod hot_reload;
 mod validation;
 
+// DHCP sub-config (PXE / BOOTP / TFTP) re-exported from the dhcp module.
+pub mod dhcp;
+
 use arc_swap::ArcSwap;
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
@@ -420,6 +423,10 @@ pub struct DhcpConfig {
     /// NTP server option, e.g. `"172.20.255.55"`.
     #[serde(default)]
     pub ntp_server: String,
+    /// `[dhcp.pxe]` — PXE / BOOTP / TFTP network-boot configuration
+    /// (story 04-006).
+    #[serde(default)]
+    pub pxe: dhcp::PxeConfig,
 }
 
 /// `[rate_limit]` — token bucket rate limiting (story 03-004). Reserved.
