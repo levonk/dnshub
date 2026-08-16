@@ -83,6 +83,10 @@ pub struct DhcpConfig {
     /// `[dhcp.pxe]` — PXE/BOOTP/TFTP network boot config (story 04-006).
     #[serde(default)]
     pub pxe: Option<crate::dhcp::pxe::config::PxeConfig>,
+
+    /// `[dhcp.relay]` — DHCP relay agent config (story 04-007).
+    #[serde(default)]
+    pub relay: crate::dhcp::relay::config::RelayConfig,
 }
 
 /// `[[dhcp.pools]]` — a single IP pool with its own options and lease time.
@@ -421,4 +425,5 @@ lease_time_hours = 1
     }
 }
 
+#[allow(unused_imports)]
 pub use crate::dhcp::pxe::config::PxeConfig;

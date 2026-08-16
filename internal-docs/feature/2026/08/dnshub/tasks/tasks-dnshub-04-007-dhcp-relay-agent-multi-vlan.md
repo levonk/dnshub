@@ -7,7 +7,7 @@ prd_file: "internal-docs/feature/2026/08/dnshub/feat-202608110000-dnshub.md"
 phase: 4
 parallel_id: 7
 branch: "feature/current/dnshub/story-04-007-dhcp-relay-agent-multi-vlan"
-status: "todo"
+status: "done"
 assignee: ""
 reviewer: ""
 dependencies: ["01-004"]
@@ -65,19 +65,19 @@ Implement DHCP relay agent support: receive relayed DHCP requests (giaddr field 
 
 ## Sub-Tasks
 
-- [ ] Create src/dhcp/relay/config.rs with RelayConfig: enabled, trusted_agents (Vec<String>), option82 (Option82Config: enabled, circuit_id_map: HashMap<String, String>) per PRD lines 888-910
+- [x] Create src/dhcp/relay/config.rs with RelayConfig: enabled, trusted_agents (Vec<String>), option82 (Option82Config: enabled, circuit_id_map: HashMap<String, String>) per PRD lines 888-910
   **Verify**: `cargo build` → exit 0
-- [ ] Create src/dhcp/relay/trust.rs with RelayTrust: is_trusted(agent_ip) -> bool, check against configured trusted_agents list
+- [x] Create src/dhcp/relay/trust.rs with RelayTrust: is_trusted(agent_ip) -> bool, check against configured trusted_agents list
   **Verify**: `cargo test --lib dhcp::relay::trust` → all pass (trusted IP accepted, untrusted rejected)
-- [ ] Create src/dhcp/relay/option82.rs with Option82 parser: parse_relay_agent_info(options) -> Option<(circuit_id, remote_id)>, extract sub-option 1 (circuit ID) and sub-option 2 (remote ID)
+- [x] Create src/dhcp/relay/option82.rs with Option82 parser: parse_relay_agent_info(options) -> Option<(circuit_id, remote_id)>, extract sub-option 1 (circuit ID) and sub-option 2 (remote ID)
   **Verify**: `cargo test --lib dhcp::relay::option82` → all pass (parse Option 82 with circuit ID and remote ID, no Option 82 → None)
-- [ ] Create src/dhcp/relay/mod.rs with RelayHandler: is_relayed(message) -> bool (giaddr != 0), select_pool(giaddr, option82) -> PoolName, send response unicast to giaddr (not broadcast)
+- [x] Create src/dhcp/relay/mod.rs with RelayHandler: is_relayed(message) -> bool (giaddr != 0), select_pool(giaddr, option82) -> PoolName, send response unicast to giaddr (not broadcast)
   **Verify**: `cargo test --lib dhcp::relay` → all pass (detect relay, select pool by giaddr, select pool by circuit_id_map)
-- [ ] Create src/dhcp/relay/v6_relay.rs with DHCPv6 relay handling: parse Relay-Forw message, extract link-address, select pool based on link-address, build Relay-Rel response
+- [x] Create src/dhcp/relay/v6_relay.rs with DHCPv6 relay handling: parse Relay-Forw message, extract link-address, select pool based on link-address, build Relay-Rel response
   **Verify**: `cargo test --lib dhcp::relay::v6_relay` → all pass (parse Relay-Forw, extract link-address, build Relay-Rel)
-- [ ] Update src/config/dhcp.rs with [dhcp.relay] section and multi-VLAN pool configuration (default_profile per pool) per PRD lines 888-931
+- [x] Update src/config/dhcp.rs with [dhcp.relay] section and multi-VLAN pool configuration (default_profile per pool) per PRD lines 888-931
   **Verify**: `cargo build` → exit 0
-- [ ] Run clippy and fmt
+- [x] Run clippy and fmt
   **Verify**: `cargo clippy -- -D warnings && cargo fmt -- --check` → exit 0
 
 ## Relevant Files
@@ -91,15 +91,15 @@ Implement DHCP relay agent support: receive relayed DHCP requests (giaddr field 
 
 ## Acceptance Criteria
 
-- [ ] Relayed DHCP requests (giaddr != 0) are detected
-- [ ] Pool is selected based on giaddr (gateway IP address)
-- [ ] Option 82 circuit ID is parsed and used for pool/profile selection
-- [ ] Responses are sent unicast to giaddr (not broadcast)
-- [ ] Untrusted relay agents are rejected
-- [ ] DHCPv6 Relay-Forw/Relay-Rel messages are handled
-- [ ] DHCPv6 pool selection uses link-address
-- [ ] Multi-VLAN pools with per-VLAN default profiles work
-- [ ] All tests pass, clippy clean, fmt clean
+- [x] Relayed DHCP requests (giaddr != 0) are detected
+- [x] Pool is selected based on giaddr (gateway IP address)
+- [x] Option 82 circuit ID is parsed and used for pool/profile selection
+- [x] Responses are sent unicast to giaddr (not broadcast)
+- [x] Untrusted relay agents are rejected
+- [x] DHCPv6 Relay-Forw/Relay-Rel messages are handled
+- [x] DHCPv6 pool selection uses link-address
+- [x] Multi-VLAN pools with per-VLAN default profiles work
+- [x] All tests pass, clippy clean, fmt clean
 
 ## Test Plan
 
@@ -130,9 +130,9 @@ Implement DHCP relay agent support: receive relayed DHCP requests (giaddr field 
 
 ## Definition of Done
 
-- [ ] All verification commands from sub-tasks pass
-- [ ] Code, tests, docs updated; CI green
-- [ ] No files outside in-scope list are modified (`git status`)
+- [x] All verification commands from sub-tasks pass
+- [x] Code, tests, docs updated; CI green
+- [x] No files outside in-scope list are modified (`git status`)
 
 ## STOP Conditions
 
@@ -155,3 +155,4 @@ Stop and report if:
 ## Changelog
 
 - 2026-08-16: initialized story file
+- 2026-08-16: implemented story 04-007 — added src/dhcp/relay/ module (RelayHandler, Option82 parser, RelayTrust, V6RelayHandler, RelayConfig); expanded DhcpConfig with [dhcp.relay] and [[dhcp.pools]] multi-VLAN configuration; 36 unit tests covering relay detection, giaddr-based pool selection, Option 82 circuit-ID profile override, trust validation, and DHCPv6 Relay-Forw/Relay-Rel handling (incl. nested relays). cargo build + cargo test green.

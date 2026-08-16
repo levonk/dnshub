@@ -34,3 +34,4 @@ pub mod pool_options;
 pub mod ddns;
 pub mod pxe;
 pub mod tftp;
+pub mod relay;
