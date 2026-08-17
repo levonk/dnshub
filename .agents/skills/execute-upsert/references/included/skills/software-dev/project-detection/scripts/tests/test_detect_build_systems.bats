@@ -11,6 +11,7 @@
 SCRIPT_DIR="$(cd "$(dirname "${BATS_TEST_FILENAME:-${BASH_SOURCE[0]}}")" && pwd)"
 DETECT_SCRIPT="$SCRIPT_DIR/../detect-build-systems.sh"
 EXTRACT_SCRIPT="$SCRIPT_DIR/../extract-build-targets.sh"
+CLI_TOOL_DISCOVERY="$SCRIPT_DIR/../cli-tool-discovery.sh"
 TEST_BASE="/tmp/skill-test/project-detection"
 
 # Speed up cli-tool-discovery.sh probes and skip installs so tests don't hang
@@ -37,6 +38,10 @@ assert_not_contains() {
 }
 
 # Create a scenario dir with specific files. Echoes the dir path.
+# Config files that require valid content for wrapper detection (devbox.json,
+# flake.nix, shell.nix, etc.) are written with minimal valid content instead
+# of empty `touch`. Build-system files (package.json, Cargo.toml, etc.) are
+# still `touch`ed — detection only checks file existence for those.
 setup_scenario() {
     local scenario="$1"; shift
     local dir="$TEST_BASE/$scenario"
@@ -44,15 +49,34 @@ setup_scenario() {
     mkdir -p "$dir"
     for f in "$@"; do
         mkdir -p "$dir/$(dirname "$f")"
-        touch "$dir/$f"
+        case "$f" in
+        devbox.json)
+            printf '{"packages":[]}\n' > "$dir/$f"
+            ;;
+        flake.nix|shell.nix|flox.nix)
+            printf '{ description = "test"; }\n' > "$dir/$f"
+            ;;
+        .envrc)
+            printf 'export PATH=$PATH:$PWD/bin\n' > "$dir/$f"
+            ;;
+        mise.toml|.mise.toml|.mise/config.toml)
+            printf '[tools]\n' > "$dir/$f"
+            ;;
+        *)
+            touch "$dir/$f"
+            ;;
+        esac
     done
     echo "$dir"
 }
 
 # Run detect-build-systems.sh from a given dir. Echoes detected systems.
+# Unsets DEVBOX_SHELL_ENABLED and IN_NIX_SHELL so cli-tool-discovery.sh
+# doesn't short-circuit on "already inside devbox/nix" when bats itself
+# runs via `devbox run --`.
 run_detect() {
     local dir="$1"
-    (cd "$dir" && bash "$DETECT_SCRIPT" "$dir") 2>/dev/null || true
+    (cd "$dir" && env -u DEVBOX_SHELL_ENABLED -u IN_NIX_SHELL bash "$DETECT_SCRIPT" "$dir") 2>/dev/null || true
 }
 
 # Run extract-build-targets.sh show from a given dir.
@@ -159,8 +183,31 @@ run_show_targets() {
 
 # --- environment wrapper detection tests (via cli-tool-discovery.sh) ---
 
+# Helper: check if devbox is functional (returns 0=yes, 1=no). No skip —
+# callers decide whether to skip or branch on the result.
+# Reuses cli-tool-discovery.sh's --detect-wrapper mode, which probes devbox
+# with `devbox run -- true` (hang-safe via devbox_run_timed). No duplicated
+# probe logic here — the include's hardened timeout/kill path is the single
+# source of truth for devbox functionality checks.
+devbox_is_functional() {
+    command -v devbox >/dev/null 2>&1 || return 1
+    local probe_dir; probe_dir="$(mktemp -d)"
+    printf '{"packages":[]}\n' > "$probe_dir/devbox.json"
+    local result
+    result="$(cd "$probe_dir" && env -u DEVBOX_SHELL -u IN_DEVBOX_SHELL \
+        DEVBOX_PROBE_TIMEOUT_SECS=5 bash "$CLI_TOOL_DISCOVERY" --detect-wrapper 2>/dev/null)" || true
+    rm -rf "$probe_dir"
+    [[ "$result" == "WRAPPER: devbox run --" ]]
+}
+
+# Helper: skip if devbox is not functional. Wraps devbox_is_functional with
+# a skip call for tests that require devbox to work.
+skip_unless_devbox_functional() {
+    devbox_is_functional || skip "devbox not functional on this platform"
+}
+
 @test "devbox: detects devbox.json" {
-    command -v devbox >/dev/null 2>&1 || skip "devbox not installed"
+    skip_unless_devbox_functional
     local dir; dir="$(setup_scenario devbox devbox.json)"
     local out; out="$(run_detect "$dir")"
     assert_contains "devbox" "$out"
@@ -168,6 +215,7 @@ run_show_targets() {
 
 @test "nix: detects flake.nix" {
     command -v nix >/dev/null 2>&1 || skip "nix not installed"
+    nix --version >/dev/null 2>&1 || skip "nix not functional on this platform"
     local dir; dir="$(setup_scenario nix flake.nix)"
     local out; out="$(run_detect "$dir")"
     assert_contains "nix" "$out"
@@ -181,10 +229,13 @@ run_show_targets() {
 }
 
 @test "no wrapper when tool missing" {
-    # If devbox isn't installed, devbox.json should not trigger detection
+    # If devbox isn't installed or not functional, devbox.json should not
+    # trigger detection. This tests both cases:
+    #   - devbox functional → "devbox" in output (detection works)
+    #   - devbox broken/missing → "devbox" NOT in output (no false positive)
     local dir; dir="$(setup_scenario no-devbox-tool devbox.json)"
     local out; out="$(run_detect "$dir")"
-    if command -v devbox >/dev/null 2>&1; then
+    if devbox_is_functional; then
         assert_contains "devbox" "$out"
     else
         assert_not_contains "devbox" "$out"

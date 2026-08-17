@@ -1812,6 +1812,24 @@ The script resolves this machine's actual identity values (`$HOME`, `whoami`,
 `--private` if the files are for private use to ease scrutiny. See
 `includes/scan-artifacts.md` for the full guidance.
 
+## Task List
+
+Each item is a checkbox the agent marks as it progresses. Mark `[~]` before
+starting, `[x]` when verified done, `[!]` if blocked.
+
+- [ ] SELECT — pick the diagram tool via the decision tree (Phase 1)
+- [ ] AUTHOR — read the bundle page for the selected tool and write the diagram following syntax conventions (Phase 2)
+- [ ] VALIDATE — run `scripts/validate-diagram.py` on the authored diagram and fix any parse errors (Phase 3)
+- [ ] EMBED — insert the diagram at the requested location in the target markdown (Phase 4)
+- [ ] Re-validate the embedded fenced block by line range to confirm it still renders (Phase 4)
+- [ ] SCAN — run `scripts/scan-artifacts.sh` on any generated files before committing (Phase 5)
+
+**Mark legend:**
+- `[ ]` — task pending (not yet started)
+- `[~]` — task in progress (actively being worked)
+- `[x]` — task done (verified complete)
+- `[!]` — task blocked (cannot proceed; note the blocker inline)
+
 ## Definition of Done
 
 Before declaring the Diagram Upsert run complete, verify every item below.

@@ -23,6 +23,7 @@ project migrations.
 * [Index Staleness Check](index-staleness-check.md) - Staleness check inside prime_impl that wraps indexed AST tool invocations; reindexes when the index DB is missing or >1h old. The async .envrc trigger is owned by async-prime-internal.md.
 * [Devbox Script Generation Bug](devbox-script-generation-bug.md) - Known v0.14.x regression; auto-detection pattern makes it largely irrelevant; workarounds still documented
 * [Devbox Broken Override](devbox-broken-override.md) - When devbox cannot build the environment at all (nixpkgs pin missing a package on a platform), override devbox-wrapped commands with direct package-manager equivalents rather than blocking
+* [Wrapper Probe Caching](wrapper-probe-caching.md) - Cache per-command subprocess probes (rtk_available, rtk_prefix, wrapper_prefix) in shell scripts; honor known-broken flags in downstream probes to skip re-probing. Prevents multi-minute hangs under parallel agent load
 * [Mandatory Testing Workflow](mandatory-testing-workflow.md) - TDD, regression tests for bug fixes, quality gates before completion; enforced via pre-commit and CI
 * [Shell Scripting Best Practices](shell-scripting-best-practices.md) - Strict mode, PATH guards, git gates, dry-runs, logging, and shellcheck/shfmt/bats verification for safe shell scripts
 * [Branch & Tag Hygiene](branch-tag-hygiene.md) - Archive stale branches and tags into a structured namespace; ownership exception for upstream repos; periodic pruning with retention windows

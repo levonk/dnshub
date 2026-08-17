@@ -34,23 +34,23 @@ INSTRUCTIONS="$SKILL_DIR/INSTRUCTIONS.md"
 
 # --- Helper: print INSTRUCTIONS.md and exit ---
 print_body() {
-  if [ -f "$INSTRUCTIONS" ]; then
-    cat "$INSTRUCTIONS"
-    exit 0
-  fi
-  echo "refresh.sh: INSTRUCTIONS.md not found at $INSTRUCTIONS" >&2
-  exit 1
+	if [ -f "$INSTRUCTIONS" ]; then
+		cat "$INSTRUCTIONS"
+		exit 0
+	fi
+	echo "refresh.sh: INSTRUCTIONS.md not found at $INSTRUCTIONS" >&2
+	exit 1
 }
 
 # --- 2. Skip conditions ---
 # SKIP_SKILL_REFRESH=1 — environment variable to skip refresh entirely
 if [ "${SKIP_SKILL_REFRESH:-0}" = "1" ]; then
-  print_body
+	print_body
 fi
 
 # Inside skills-src itself — source IS the latest version by definition
 case "$SKILL_DIR" in
-  */skills-src/src/*) print_body ;;
+*/skills-src/src/*) print_body ;;
 esac
 
 # --- 3. Check daily-refresh cache ---
@@ -63,8 +63,8 @@ DATE_FILE="$CACHE_DIR/refresh.date"
 TODAY="$(date +%Y-%m-%d)"
 
 if [ -f "$DATE_FILE" ] && [ "$(cat "$DATE_FILE" 2>/dev/null)" = "$TODAY" ]; then
-  # Already refreshed today — skip update, print body
-  print_body
+	# Already refreshed today — skip update, print body
+	print_body
 fi
 
 # --- 4. Find pnpm via cli-tool-discovery ---
@@ -72,32 +72,32 @@ CLI_DISCOVERY="$SCRIPT_DIR/cli-tool-discovery.sh"
 PNPM_RUNNER=""
 
 if [ -x "$CLI_DISCOVERY" ]; then
-  # Use runner mode to get the canonical node ecosystem runner
-  RUNNER_JSON="$("$CLI_DISCOVERY" --runner node --json 2>/dev/null || echo "")"
-  if [ -n "$RUNNER_JSON" ]; then
-    # Extract the script field (e.g., "pnpm dlx") — try jq, fall back to grep
-    if command -v jq >/dev/null 2>&1; then
-      PNPM_RUNNER="$(echo "$RUNNER_JSON" | jq -r '.script // empty' 2>/dev/null || echo "")"
-    fi
-    if [ -z "$PNPM_RUNNER" ]; then
-      # Fallback: grep for "script" field
-      PNPM_RUNNER="$(echo "$RUNNER_JSON" | grep -o '"script"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*: *"\(.*\)"/\1/' 2>/dev/null || echo "")"
-    fi
-  fi
+	# Use runner mode to get the canonical node ecosystem runner
+	RUNNER_JSON="$("$CLI_DISCOVERY" --runner node --json 2>/dev/null || echo "")"
+	if [ -n "$RUNNER_JSON" ]; then
+		# Extract the script field (e.g., "pnpm dlx") — try jq, fall back to grep
+		if command -v jq >/dev/null 2>&1; then
+			PNPM_RUNNER="$(echo "$RUNNER_JSON" | jq -r '.script // empty' 2>/dev/null || echo "")"
+		fi
+		if [ -z "$PNPM_RUNNER" ]; then
+			# Fallback: grep for "script" field
+			PNPM_RUNNER="$(echo "$RUNNER_JSON" | grep -o '"script"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*: *"\(.*\)"/\1/' 2>/dev/null || echo "")"
+		fi
+	fi
 fi
 
 # Fallback: check for pnpm directly
 if [ -z "$PNPM_RUNNER" ]; then
-  if command -v pnpm >/dev/null 2>&1; then
-    PNPM_RUNNER="pnpm dlx"
-  elif command -v devbox >/dev/null 2>&1 && devbox run -- command -v pnpm >/dev/null 2>&1; then
-    PNPM_RUNNER="devbox run -- pnpm dlx"
-  else
-    # pnpm not found — print body with on-disk version
-    echo "refresh.sh: pnpm not found — using on-disk version" >&2
-    echo "$TODAY" > "$DATE_FILE" 2>/dev/null || true
-    print_body
-  fi
+	if command -v pnpm >/dev/null 2>&1; then
+		PNPM_RUNNER="pnpm dlx"
+	elif command -v devbox >/dev/null 2>&1 && devbox run -- command -v pnpm >/dev/null 2>&1; then
+		PNPM_RUNNER="devbox run -- pnpm dlx"
+	else
+		# pnpm not found — print body with on-disk version
+		echo "refresh.sh: pnpm not found — using on-disk version" >&2
+		echo "$TODAY" >"$DATE_FILE" 2>/dev/null || true
+		print_body
+	fi
 fi
 
 # --- 5. Detect existing nono session ---
@@ -105,7 +105,7 @@ fi
 # sandboxing. Skip our sandbox layer and run the update directly.
 ALREADY_SANDBOXED=0
 if [ -n "${NONO_SESSION:-}" ]; then
-  ALREADY_SANDBOXED=1
+	ALREADY_SANDBOXED=1
 fi
 
 # --- 6. Run update (sandboxed if available) ---
@@ -113,66 +113,85 @@ SANDBOX_CMD=""
 NONO_PROFILE="$SKILL_DIR/references/nono-profile.json"
 
 if [ "$ALREADY_SANDBOXED" -eq 0 ]; then
-  # Use cli-tool-discovery to find nono through the full resolution chain
-  # (devbox shell → devbox run → mise → nix → PATH → package managers).
-  # This respects the devbox.json environment and the mandatory devbox rule
-  # in skills-src AGENTS.md.
-  if [ -x "$CLI_DISCOVERY" ]; then
-    NONO_RESOLVE="$("$CLI_DISCOVERY" nono --json 2>/dev/null || echo "")"
-    if [ -n "$NONO_RESOLVE" ]; then
-      NONO_STATUS=""
-      if command -v jq >/dev/null 2>&1; then
-        NONO_STATUS="$(echo "$NONO_RESOLVE" | jq -r '.status // empty' 2>/dev/null || echo "")"
-      fi
-      if [ -z "$NONO_STATUS" ]; then
-        NONO_STATUS="$(echo "$NONO_RESOLVE" | grep -o '"status"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*: *"\(.*\)"/\1/' 2>/dev/null || echo "")"
-      fi
-      case "$NONO_STATUS" in
-        found)
-          SANDBOX_CMD="nono"
-          ;;
-        wrapper)
-          # Extract wrapper command (e.g., "devbox run --")
-          if command -v jq >/dev/null 2>&1; then
-            NONO_WRAPPER="$(echo "$NONO_RESOLVE" | jq -r '.wrapper // empty' 2>/dev/null || echo "")"
-          fi
-          if [ -z "$NONO_WRAPPER" ]; then
-            NONO_WRAPPER="$(echo "$NONO_RESOLVE" | grep -o '"wrapper"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*: *"\(.*\)"/\1/' 2>/dev/null || echo "")"
-          fi
-          SANDBOX_CMD="$NONO_WRAPPER nono"
-          ;;
-      esac
-    fi
-  fi
-  # Fallback: bare command -v if cli-tool-discovery is unavailable
-  if [ -z "$SANDBOX_CMD" ] && command -v nono >/dev/null 2>&1; then
-    SANDBOX_CMD="nono"
-  fi
+	# Use cli-tool-discovery to find nono through the full resolution chain
+	# (devbox shell → devbox run → mise → nix → PATH → package managers).
+	# This respects the devbox.json environment and the mandatory devbox rule
+	# in skills-src AGENTS.md.
+	if [ -x "$CLI_DISCOVERY" ]; then
+		NONO_RESOLVE="$("$CLI_DISCOVERY" nono --json 2>/dev/null || echo "")"
+		if [ -n "$NONO_RESOLVE" ]; then
+			NONO_STATUS=""
+			if command -v jq >/dev/null 2>&1; then
+				NONO_STATUS="$(echo "$NONO_RESOLVE" | jq -r '.status // empty' 2>/dev/null || echo "")"
+			fi
+			if [ -z "$NONO_STATUS" ]; then
+				NONO_STATUS="$(echo "$NONO_RESOLVE" | grep -o '"status"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*: *"\(.*\)"/\1/' 2>/dev/null || echo "")"
+			fi
+			case "$NONO_STATUS" in
+			found)
+				SANDBOX_CMD="nono"
+				;;
+			wrapper)
+				# Extract wrapper command (e.g., "devbox run --")
+				if command -v jq >/dev/null 2>&1; then
+					NONO_WRAPPER="$(echo "$NONO_RESOLVE" | jq -r '.wrapper // empty' 2>/dev/null || echo "")"
+				fi
+				if [ -z "$NONO_WRAPPER" ]; then
+					NONO_WRAPPER="$(echo "$NONO_RESOLVE" | grep -o '"wrapper"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*: *"\(.*\)"/\1/' 2>/dev/null || echo "")"
+				fi
+				SANDBOX_CMD="$NONO_WRAPPER nono"
+				;;
+			esac
+		fi
+	fi
+	# Fallback: bare command -v if cli-tool-discovery is unavailable
+	if [ -z "$SANDBOX_CMD" ] && command -v nono >/dev/null 2>&1; then
+		SANDBOX_CMD="nono"
+	fi
 fi
 
 run_update() {
-  if [ -n "$SANDBOX_CMD" ] && [ -f "$NONO_PROFILE" ]; then
-    # Sandboxed update via nono with bundled profile
-    # shellcheck disable=SC2086 — SANDBOX_CMD and PNPM_RUNNER are intentionally
-    # unquoted: they may contain multi-word commands like "devbox run -- nono"
-    # or "pnpm dlx" that must word-split into separate arguments.
-    $SANDBOX_CMD run --profile "$NONO_PROFILE" -- \
-      $PNPM_RUNNER skills update "$SKILL_NAME"
-  else
-    # Unsandboxed update:
-    # - nono not installed, or
-    # - already inside a nono session (parent handles it), or
-    # - native Windows (no lightweight sandbox available)
-    # The trust model treats levonk/skills-releases as a trusted source.
-    # shellcheck disable=SC2086 — PNPM_RUNNER may be a multi-word command.
-    $PNPM_RUNNER skills update "$SKILL_NAME"
-  fi
+	if [ -n "$SANDBOX_CMD" ] && [ -f "$NONO_PROFILE" ]; then
+		# Sandboxed update via nono with bundled profile
+		# shellcheck disable=SC2086 # SANDBOX_CMD and PNPM_RUNNER are intentionally
+		# unquoted: they may contain multi-word commands like "devbox run -- nono"
+		# or "pnpm dlx" that must word-split into separate arguments.
+		$SANDBOX_CMD run --profile "$NONO_PROFILE" -- \
+			$PNPM_RUNNER skills update "$SKILL_NAME"
+	else
+		# Unsandboxed update:
+		# - nono not installed, or
+		# - already inside a nono session (parent handles it), or
+		# - native Windows (no lightweight sandbox available)
+		# The trust model treats levonk/skills-releases as a trusted source.
+		# shellcheck disable=SC2086 # PNPM_RUNNER may be a multi-word command.
+		$PNPM_RUNNER skills update "$SKILL_NAME"
+	fi
 }
 
 # Run the update, write date regardless of outcome
 run_update >&2 || true
-echo "$TODAY" > "$DATE_FILE" 2>/dev/null || true
+echo "$TODAY" >"$DATE_FILE" 2>/dev/null || true
+
+# --- 7b. Update last-used in SKILL.md frontmatter ---
+# `skills update` overwrites the entire skill directory, including SKILL.md.
+# This destroys any last-used update the AI made from the self-update-requirement
+# include (which fires BEFORE refresh in the wrapper pattern). To fix this,
+# refresh.sh deterministically sets last-used to today AFTER the update completes.
+# This is the single source of truth for last-used — the self-update-requirement
+# include is a fallback that fires only when refresh.sh is skipped (SKIP_SKILL_REFRESH,
+# inside skills-src, or cache hit).
+SKILL_MD="$SKILL_DIR/SKILL.md"
+if [ -f "$SKILL_MD" ]; then
+	if command -v sed >/dev/null 2>&1; then
+		# Replace last-used: "YYYY-MM-DD" with today's date.
+		# Use a temp file for portability (BSD sed and GNU sed differ on -i).
+		TMP_FILE="$(mktemp "${SKILL_MD}.XXXXXX")" || TMP_FILE=""
+		if [ -n "$TMP_FILE" ]; then
+			sed "s/^\([[:space:]]*last-used:[[:space:]]*\)\"[0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}\"/\1\"$TODAY\"/" "$SKILL_MD" >"$TMP_FILE" && mv "$TMP_FILE" "$SKILL_MD"
+		fi
+	fi
+fi
 
 # --- 8. Print the (now current) body ---
 print_body
-

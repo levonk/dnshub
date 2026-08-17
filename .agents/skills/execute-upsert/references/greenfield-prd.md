@@ -301,17 +301,30 @@ Date-embedded filenames and directory structures make documents:
 internal-docs/{type}/YYYY/MM/{type}-YYYYMMDDHHmm-{slug}.md
 ```
 
-For features, the pattern includes a feature-specific subdirectory:
+For features, the pattern uses a **two-stage lifecycle** (todo → archive) with
+a feature-specific subdirectory. The lifecycle protocol (archive trigger,
+frontmatter dates, `git mv` move, backfilling) is defined in the shared
+`work-lifecycle` include — see
+[`src/current/includes/work-lifecycle.md.tmpl`](../../current/includes/work-lifecycle.md.tmpl).
+The path shapes are:
 ```
-internal-docs/feature/YYYY/MM/{slug}/feat-YYYYMMDDHHmm-{slug}.md
+# Pending (active work):
+internal-docs/feature/todo/{slug}/feat-YYYYMMDDHHmm-{slug}.md
+
+# Archived (completed):
+internal-docs/feature/archive/YYYY/MM/{slug}/feat-YYYYMMDDHHmm-{slug}.md
 ```
+
+The `{slug}` directory name never changes between stages — only the parent
+directory changes. The archive's `YYYY/MM/` is derived from the feature's
+creation timestamp (the `feat-YYYYMMDDHHmm` prefix), not the completion date.
 
 ### Components
 
 - **{type}**: Document type directory
   - `adr` - Architecture Decision Records (accepted decisions)
   - `oos` - Out of Scope (rejected features/decisions)
-  - `feature` - Features (implemented functionality)
+  - `feature` - Features (implemented functionality, two-stage lifecycle)
 
 - **{YYYY}**: Year directory (4-digit year)
   - Example: `2025` for year 2025
@@ -323,6 +336,7 @@ internal-docs/feature/YYYY/MM/{slug}/feat-YYYYMMDDHHmm-{slug}.md
   - URL-friendly slug matching the feature name
   - Contains the feature document and related tasks
   - Example: `user-authentication`, `dark-mode-support`
+  - Lives under `todo/` while active, `archive/YYYY/MM/` when complete
 
 - **{type}-**: Document type prefix in filename
   - Matches the directory type
@@ -357,11 +371,13 @@ internal-docs/feature/YYYY/MM/{slug}/feat-YYYYMMDDHHmm-{slug}.md
 - **Status**: Rejected, Deferred, Out of Scope
 
 ### Feature Documents
-- **Location**: `internal-docs/feature/YYYY/MM/{slug}/`
+- **Location (pending)**: `internal-docs/feature/todo/{slug}/`
+- **Location (archived)**: `internal-docs/feature/archive/YYYY/MM/{slug}/`
 - **Prefix**: `feat`
 - **Purpose**: Document implemented features and functionality
 - **Status**: Draft, Planning, Ready, In Progress, Testing, Complete, Deprecated
 - **Structure**: Each feature has its own subdirectory containing the feature document and a `tasks/` subdirectory
+- **Lifecycle**: Follows the shared `work-lifecycle` protocol — see [`work-lifecycle.md.tmpl`](../../current/includes/work-lifecycle.md.tmpl). Features start in `todo/` (flat). When all stories are `[x] Done` and DoD passes, the `{slug}/` directory moves to `archive/YYYY/MM/` via `git mv`. Features with `[!] Blocked` or `[ ] Todo` stories remain in `todo/`. Frontmatter dates: `date.created`, `date.completed`, `date.last-activity`.
 
 ## Directory Structure
 
@@ -383,17 +399,23 @@ internal-docs/
 │           ├── oos-202506250915-dark-mode-support.md
 │           └── oos-202506251430-plugin-system.md
 └── feature/
-    └── 2025/
-        └── 06/
-            ├── user-authentication/
-            │   ├── feat-202506251630-user-authentication.md
-            │   └── tasks/
-            │       ├── tasks-user-authentication-01-001-user-tables.md
-            │       └── tasks-user-authentication-02-001-user-signup-api.md
-            └── api-rate-limiting/
-                ├── feat-202506251745-api-rate-limiting.md
-                └── tasks/
-                    └── tasks-api-rate-limiting-01-001-rate-limiter.md
+    ├── todo/                                    # active work (flat — easy to find)
+    │   ├── user-authentication/
+    │   │   ├── feat-202506251630-user-authentication.md
+    │   │   └── tasks/
+    │   │       ├── tasks-user-authentication-01-001-user-tables.md
+    │   │       └── tasks-user-authentication-02-001-user-signup-api.md
+    │   └── api-rate-limiting/
+    │       ├── feat-202506251745-api-rate-limiting.md
+    │       └── tasks/
+    │           └── tasks-api-rate-limiting-01-001-rate-limiter.md
+    └── archive/                                 # completed work (dated hierarchy)
+        └── 2025/
+            └── 06/
+                └── dark-mode-support/           # moved here via git mv when all stories [x] Done
+                    ├── feat-202506250915-dark-mode-support.md
+                    └── tasks/
+                        └── tasks-dark-mode-support-01-001-toggle.md
 ```
 
 ## Timestamp Management
@@ -418,7 +440,7 @@ Documents should reference related documents using their full paths:
 ```markdown
 See also: [ADR-20250131](../adr/2025/01/adr-202501311430-template-based-ai-workflow-sync.md)
 Related: [OOS-20250625](../oos/2025/06/oos-202506250915-dark-mode-support.md)
-Feature: [User Authentication](../feature/2025/06/feat-202506251630-user-authentication.md)
+Feature: [User Authentication](../feature/todo/user-authentication/feat-202506251630-user-authentication.md)
 ```
 
 ## Benefits Over Alternative Naming
@@ -447,6 +469,15 @@ Feature: [User Authentication](../feature/2025/06/feat-202506251630-user-authent
 3. **Create directories as needed** - Year/month directories are created on-demand
 4. **Reference related documents** - Link to related ADRs, features, or out-of-scope items
 5. **Consistent timezone** - Use the same timezone for all timestamps
+
+### Backfilling Pre-Existing Features
+
+Features created before the two-stage lifecycle was adopted may still live at
+the legacy `internal-docs/feature/YYYY/MM/{slug}/` path. The backfill protocol
+(completed → `archive/`, in-progress → `todo/`) is defined in the shared
+`work-lifecycle` include — see
+[`work-lifecycle.md.tmpl`](../../current/includes/work-lifecycle.md.tmpl)
+→ "Backfilling Pre-Existing Documents".
 
 ## Template Integration
 
@@ -510,7 +541,7 @@ Three properties make the PRD executable by a weaker model:
    - After the user answers, synthesize the responses into a full PRD.
    - Use a short descriptive slug for the name of the PRD file.
    - Use the date-embedded naming convention: `feat-YYYYMMDDHHmm-{slug}.md`
-   - Put the PRD in `internal-docs/feature/YYYY/MM/{slug}/` directory, creating year/month/slug directories as needed.
+   - Put the PRD in `internal-docs/feature/todo/{slug}/` directory, creating todo/slug directories as needed.
    - **MUST** follow the structure and sections defined in the template below.
    - Use explicit, concrete language. Avoid jargon where possible.
    - Assume the primary reader is a **junior developer**.
@@ -540,7 +571,7 @@ Three properties make the PRD executable by a weaker model:
 
 5. **Save the PRD**
    - File format: Markdown (`.md`).
-   - Location: `internal-docs/feature/YYYY/MM/{slug}/`.
+   - Location: `internal-docs/feature/todo/{slug}/`.
    - Filename pattern: `feat-YYYYMMDDHHmm-{slug}.md` (see naming convention).
 
 6. **Wait for Feedback**

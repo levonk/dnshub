@@ -1663,6 +1663,25 @@ review to the story's changes:
 For the expanded checklist with examples and edge cases per category, see
 [Review Checklist](references/review-checklist.md).
 
+## Task List
+
+Each item is a checkbox the agent marks as it progresses. Mark `[~]` before
+starting, `[x]` when verified done, `[!]` if blocked.
+
+- [ ] Gather context — read the PR description, linked issues, and the diff (Quick Start Step 1)
+- [ ] Understand data flow — trace how data moves through the app and note any new patterns (Quick Start Step 2)
+- [ ] Run automated validation — run the bundled `code-quality-validation` pipeline for deterministic lint/format/test/security results (Quick Start Step 3)
+- [ ] Run the checklist — work through each category (Infrastructure, Schemas, Integrations, Security, Performance, Accessibility, Cross-Cutting) with file/line references (Quick Start Step 4)
+- [ ] Surface schema/integration risk — call out anything requiring coordination (migrations, API consumers, feature flags) (Quick Start Step 5)
+- [ ] Write the review — lead with blockers, then suggestions, then nits, each referencing the specific checklist item (Quick Start Step 6)
+- [ ] Return structured verdict (automated mode) — produce the Review Output Format with `REVIEW_VERDICT`, counts, and per-finding details (Automated Mode)
+
+**Mark legend:**
+- `[ ]` — task pending (not yet started)
+- `[~]` — task in progress (actively being worked)
+- `[x]` — task done (verified complete)
+- `[!]` — task blocked (cannot proceed; note the blocker inline)
+
 ## Definition of Done
 
 Before declaring the code-review-guidance run complete, verify every item

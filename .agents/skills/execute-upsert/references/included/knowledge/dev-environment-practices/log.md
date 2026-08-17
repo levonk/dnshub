@@ -1,5 +1,23 @@
 # Directory Update Log
 
+## 2026-08-16
+
+* **Add**: [wrapper-probe-caching.md](wrapper-probe-caching.md) —
+  documents the practice of caching per-command subprocess probes in
+  shell scripts that wrap commands through environment detection
+  (devbox, rtk, cli-tool-discovery). Sourced from the git-collect.sh
+  30+ minute hang under 10 parallel agent sessions (2026-08-16): the
+  startup `probe_devbox()` completed correctly, but `rtk_available()`
+  was un-cached and called `cli-tool-discovery.sh` on every `git_cmd()`
+  invocation (~20 per run), each re-probing devbox (15s timeout). Under
+  parallel load, the nix store lock contended and probes serialized at
+  15s each, producing 20 × 90s = 30 min. The fix caches
+  `rtk_available()` in `RTK_AVAILABLE_CACHE`, `rtk_prefix()` per-tool
+  in `RTK_PREFIX_CACHE__<tool>`, and makes `rtk_available()` honor
+  `WRAPPER_DEVBOX_DISABLED` (skip cli-tool-discovery, PATH check only).
+  Added to [index.md](index.md) and [overview.md](overview.md.tmpl)
+  table.
+
 ## 2026-08-09
 
 * **Add**: [index-staleness-check.md](index-staleness-check.md) — staleness check inside prime_impl that wraps indexed AST tool invocations (reindex when DB missing or >1h old). References async-prime-internal.md for the trigger; does NOT duplicate it.
@@ -39,8 +57,9 @@
 
 * **Ingest**: Created [devbox-broken-override.md](devbox-broken-override.md) —
   documents the practice for when devbox cannot build the environment at all
-  (nixpkgs pin missing a package on a specific platform, e.g., the `jujitsu`
-  package missing on Intel Macs). Distinct from the script generation bug
+  (nixpkgs pin missing a package on a specific platform, e.g., the `jujutsu`
+  package missing on Intel Macs — later found to be a typo in devbox.json,
+  not an actual nixpkgs absence). Distinct from the script generation bug
   (which is a v0.14.x regression where `devbox run <script>` fails but
   `devbox run -- <cmd>` works). The override practice: replace
   devbox-wrapped commands with direct package-manager equivalents

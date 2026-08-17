@@ -1867,6 +1867,705 @@ fi
 ```
 
 
+---
+description: Shared standing quality floor for code changes — the project-wide bar every change must clear before it counts as done. Distinct from per-task acceptance criteria (which answer "did we build this thing?") and from the skill-artifact Definition of Done pattern (which covers the skill's own checklist format). This include covers code-change quality: correctness, quality, integration, documentation, and ship-readiness. Inlined by execute-upsert and any skill that needs a standing quality gate for code changes.
+---
+
+### Project Quality Floor
+
+Every code change must clear this standing bar before it counts as done.
+This is separate from per-task acceptance criteria. Acceptance criteria
+answer "did we build the right thing?" — they vary per task. The quality
+floor answers "is it ready?" — it is the same every time.
+
+A task is done only when **its** acceptance criteria are met **and** the
+quality floor below is satisfied. Skipping either leaves work that looks
+finished but is not.
+
+#### Correctness
+
+- [ ] All acceptance criteria for the task are met
+- [ ] Code runs and behaves as intended, verified at runtime — not just
+  compiled or typechecked
+- [ ] New behavior is covered by tests that fail without the change and
+  pass with it
+- [ ] Existing tests still pass; no regressions introduced
+- [ ] Edge cases and error paths are handled, not just the happy path
+
+#### Quality
+
+- [ ] Code reveals intent through naming and structure; no comments needed
+  to explain what it does
+- [ ] No duplicated business logic
+- [ ] No dead code, debug output, or commented-out blocks left behind
+- [ ] Changes are scoped to the task; no unrelated refactors snuck in
+- [ ] Linting and formatting pass
+
+#### Integration
+
+- [ ] Change works with the rest of the system, not just in isolation
+- [ ] Database migrations, config changes, and feature flags are accounted
+  for
+- [ ] Backward compatibility considered for any public interface or API
+  change
+
+#### Documentation
+
+- [ ] Public interfaces, APIs, and user-facing behavior are documented
+- [ ] Architectural decisions worth preserving are recorded
+- [ ] Documentation describes the current state in timeless language, not
+  the change history
+
+#### Ship-readiness
+
+- [ ] Security implications reviewed for any untrusted input, auth, or
+  data handling
+- [ ] Observability in place for new critical paths (logs, metrics, traces)
+- [ ] Rollback path exists for anything risky
+- [ ] The change has been reviewed before merge or deploy
+
+#### How to Apply
+
+- **Per task**: confirm Correctness and Quality before checking the task
+  off.
+- **Per feature**: confirm Integration and Documentation before considering
+  the feature complete.
+- **Per release**: the full checklist is the floor; deployment-specific
+  gates stack on top.
+
+A quality floor that is renegotiated every sprint is not a quality floor.
+Tailor the list to the project once, then reuse it unchanged.
+
+#### Red Flags
+
+- "It is done, I just have not run it yet" — unverified work is not done.
+- "Tests pass" used as a synonym for done while docs, regressions, or
+  runtime verification are skipped.
+- A different bar applied depending on deadline pressure.
+- Acceptance criteria treated as the whole bar, with no standing quality
+  floor.
+- "Done" declared before review on changes that need it.
+
+
+---
+description: Shared simplicity and scope discipline rules for subagent dispatch — enforce "simplest thing that could work" and "touch only what the task requires" on every subagent. References the KISS, YAGNI, and Minimal Scope knowledge pages. Inlined by execute-upsert into the tech context block injected into every subagent dispatch, and available as a reference for the review subagent to check against.
+---
+
+### Simplicity and Scope Discipline
+
+Every subagent dispatch receives these rules as binding constraints alongside
+the tech context block. The review subagent checks the story's diff against
+these rules before returning a verdict.
+
+#### Rule 0: Simplicity First
+
+Before writing any code, ask: "What is the simplest thing that could work?"
+
+After writing code, review it against these checks:
+
+- Can this be done in fewer lines?
+- Are these abstractions earning their complexity?
+- Would a staff engineer look at this and say "why did you not just..."?
+- Is this building for hypothetical future requirements, or the current task?
+
+```
+SIMPLICITY CHECK:
+✗ Generic EventBus with middleware pipeline for one notification
+✓ Simple function call
+
+✗ Abstract factory pattern for two similar components
+✓ Two straightforward components with shared utilities
+
+✗ Config-driven form builder for three forms
+✓ Three form components
+```
+
+Three similar lines of code is better than a premature abstraction. Implement
+the naive, obviously-correct version first. Optimize only after correctness is
+proven with tests. See the KISS principle (fewest concepts per unit of code,
+not fewest characters) and the YAGNI principle (do not add config keys,
+methods, flags, or abstractions without a concrete accepted use case).
+
+#### Rule 0.5: Scope Discipline
+
+Touch only what the task requires.
+
+Do NOT:
+
+- "Clean up" code adjacent to the change
+- Refactor imports in files not being modified
+- Remove comments not fully understood
+- Add features not in the spec because they "seem useful"
+- Modernize syntax in files only being read
+- Create new utility files for one-time operations
+
+If something worth improving is noticed outside the task scope, note it — do
+not fix it:
+
+```
+NOTICED BUT NOT TOUCHING:
+- src/utils/format.ts has an unused import (unrelated to this task)
+- The auth middleware could use better error messages (separate task)
+→ Want me to create tasks for these?
+```
+
+This operationalizes the Minimal Scope practice: each change should contain
+one completely working, self-contained modification. Mixing unrelated changes
+makes review harder, revert impossible, and bisect broken.
+
+#### Injection into Subagent Dispatches
+
+When execute-upsert dispatches a dev subagent in Phase 6, the dispatch prompt
+includes these rules verbatim after the tech context block:
+
+```text
+## Simplicity and Scope (Binding Constraint)
+
+- Implement the simplest thing that could work. Do not add abstractions
+  until the third use case demands it.
+- Touch only what the story requires. Do not clean up adjacent code,
+  refactor unrelated files, or add features not in the story.
+- If you notice something worth improving outside scope, note it in the
+  story file — do not fix it.
+```
+
+The review subagent checks the story's diff against these rules. A diff that
+includes unrelated refactors or speculative abstractions gets a `NEEDS_FIXES`
+verdict with the specific violations listed.
+
+
+---
+description: Shared two-stage lifecycle protocol (todo → archive) for work-tracking documents — handoffs, features, and any artifact with a Definition of Done gate. Supports audience variants (agent vs human) via the {root} parameter
+---
+
+### Work-Tracking Document Lifecycle
+
+Work-tracking documents (handoffs, feature PRDs, task indexes) use a
+**two-stage lifecycle**: pending work lives in a flat `todo/` directory for
+easy reference, and completed work is archived into a dated hierarchy so you
+can tell at a glance what is active and what is finished.
+
+#### Two-Stage Layout
+
+| Stage | Path shape | Purpose |
+|-------|-----------|---------|
+| **Pending** | `{root}/todo/{filename}` | Active work — the receiving session reads from here |
+| **Archived** | `{root}/archive/YYYY/MM/{filename}` | Completed work — moved here via `git mv` after all DoD items are `[x]` |
+
+Where:
+- `{root}` — the document-type root (e.g., `.agents/handoffs` for agent
+  handoffs, `.agents/handoffs/human` for human handoffs,
+  `internal-docs/feature` for features)
+- `{filename}` — the permanent filename, never changes between stages
+- `YYYY/MM` — derived from the document's **creation timestamp** (embedded in
+  the filename), not the completion date
+
+**The filename never changes between pending and archived.** Only the parent
+directory changes. This means a document can be referenced by name regardless
+of its lifecycle stage.
+
+**Why a flat `todo/` directory:** when you tell an agent "work on the
+`fix-auth-bug` handoff" or "resume the `project-prefs` feature", the agent
+finds it immediately at `{root}/todo/{filename}` — no date-path guessing. The
+dated hierarchy is only needed for completed work, where you browse by month
+to review what was finished.
+
+#### Audience Variants
+
+The lifecycle mechanics (two-stage layout, archive trigger, frontmatter dates,
+`git mv` protocol) are identical across audiences. What differs is the
+**{root}**, the **document format**, and the **routing criteria** — when to
+create a document for one audience vs the other.
+
+| Audience | `{root}` | Reader | Format | When to create |
+|----------|----------|--------|--------|----------------|
+| **Agent** | `.agents/handoffs` | The next AI session | Context-dense: full git state, task list with `[ ]`/`[~]`/`[x]`/`[!]` marks, DoD, suggested skills, technical context | Session ends with work remaining; context needs to survive across sessions |
+| **Human** | `.agents/handoffs/human` | The user | Action-oriented: what is needed, why, what was tried, exact steps to resolve | A task is blocked on something only a human can provide (API keys, access, decisions, approvals) |
+
+**Routing criteria — when to create a human handoff:**
+
+A blocked task (`[!]`) routes to the human queue when the blocker requires
+human-only action. Human-only actions include:
+- Providing credentials, API keys, tokens, or access that cannot be generated
+  programmatically
+- Making a decision between options the agent has researched but cannot
+  choose (architectural, product, priority)
+- Granting permissions (repository access, CI approval, deployment
+  authorization)
+- Approving a destructive or irreversible operation the agent cannot perform
+  without explicit consent
+- Providing information that exists only in the human's context (business
+  requirements, stakeholder preferences, external system details)
+
+A blocked task stays in the agent handoff when the blocker can be resolved by
+a future agent session (waiting on an upstream dependency, needing more
+research, requiring a different skill).
+
+**A single blocked task may route to both queues:** the agent handoff retains
+the `[!]` mark with a reference to the human handoff file, and the human
+handoff contains the action-oriented request. When the human resolves the
+blocker, the agent handoff's `[!]` is cleared and the human handoff is
+archived.
+
+**Human handoff format:** self-contained — a human should be able to read
+just this document (or the GitHub issue created from it) and understand the
+full picture without reading the agent handoff. Required sections:
+- **Title** — what is needed, in one line
+- **Project Context** — the project name, what it is, and a 1-2 sentence
+  description so the human knows which project this is about
+- **Feature Context** — what feature or work was being attempted when the
+  blocker was hit, and why it matters (the goal, not just the task)
+- **Current State** — what has been done so far: completed items, in-progress
+  items, and where the blocker sits in the overall work
+- **What I need from you** — the specific action, numbered if multiple steps
+- **Why I can't proceed** — the blocker explained for a non-agent reader
+- **What I tried** — the approaches attempted before blocking
+- **Context** — links to the agent handoff, relevant files, run log, or
+  external references
+- **How to unblock me** — what to do after the action is taken (e.g., "re-run
+  the ai-upsert skill" or "tell me the API key is in `.env`")
+
+**Human handoff filename:** same `YYYYMMDDHHmm-{slug}.md` convention. The slug
+should describe the action needed, not the task that blocked (e.g.,
+`202608121752-provide-openai-api-key.md`, not
+`202608121752-blocked-on-eval-runner.md`).
+
+**GitHub issue creation:** when `gh` is available and the repo has a GitHub
+remote, also create a GitHub issue from the human handoff content. The issue
+is the visibility layer — it shows up in the issue list, can be assigned and
+labeled, and stays open until the human resolves the blocker. The file is
+always created first (crash safety); the issue is conditional on `gh` and a
+remote.
+
+Protocol:
+1. Write the human handoff file to `.agents/handoffs/human/todo/` first.
+2. Check for `gh` and a GitHub remote (`git remote get-url origin`).
+3. If both exist, create the issue:
+   ```bash
+   gh issue create \
+     --title "{action needed — one line}" \
+     --body-file ".agents/handoffs/human/todo/{TIMESTAMP}-{SLUG}.md" \
+     --label "human-handoff"
+   ```
+   Create the `human-handoff` label first if it doesn't exist:
+   ```bash
+   gh label create "human-handoff" --description "Action item requiring human input (API keys, access, decisions, approvals)" --color "BFD4F2" 2>/dev/null || true
+   ```
+4. Record the issue number in the human handoff file's frontmatter:
+   ```yaml
+   github_issue: 42
+   ```
+5. If `gh` is unavailable or no GitHub remote exists, skip issue creation —
+   the file alone is durable. Note in the file: "No GitHub issue created
+   (gh unavailable or no remote)."
+
+**Issue body:** the human handoff file content directly, via `--body-file`
+(see the `gh-posting-guard` include for why `--body-file` is mandatory —
+never `--body` with an inline string). The file's Project Context, Feature
+Context, and Current State sections give the human enough background to
+understand the request without reading the agent handoff.
+
+**Issue lifecycle:** the issue stays open until the human resolves the
+blocker. When the issue is closed, the AI archives the human handoff file
+from `human/todo/` to `human/archive/YYYY/MM/` via `git mv`. Do not
+auto-close issues — the human closes them explicitly after resolving the
+blocker.
+
+**Archive trigger — reconciliation:** the AI does not poll for issue closure.
+Instead, the next ai-upsert run reconciles human handoffs in Phase 0:
+
+1. Scan `.agents/handoffs/human/todo/` for files with `github_issue`
+   frontmatter.
+2. For each, check if the issue is closed:
+   ```bash
+   gh issue view {number} --json state --jq '.state'
+   ```
+3. If `CLOSED`, archive the file via `git mv` to `human/archive/YYYY/MM/`.
+4. If `OPEN`, leave it — the human has not yet acted.
+
+This piggybacks on the existing run lifecycle — no separate process or cron
+needed. The issue is the visibility layer (the human sees it and closes it);
+the reconciliation is the cleanup layer (the AI archives on next run).
+
+**Human handoff archive:** when the human has provided what was needed and the
+blocking task is resolved (marked `[x]` in the agent handoff), archive the
+human handoff from `human/todo/` to `human/archive/YYYY/MM/` via `git mv`,
+following the same archive protocol below. If a GitHub issue was created,
+the reconciliation step above handles the archive trigger — the AI checks
+issue state on the next run and archives if closed. The human handoff's DoD
+is two items: "the blocker was resolved and the requesting task is
+unblocked" and "the GitHub issue (if created) is closed."
+
+#### Lifecycle Frontmatter Dates
+
+Work-tracking documents track three dates in their frontmatter under the
+`date:` key, all in `YYYY-MM-DD` format:
+
+| Field | When to update | Meaning |
+|-------|----------------|---------|
+| `date.created` | When the document is first created — never updated thereafter | The document's birth date (also embedded in the filename timestamp) |
+| `date.completed` | When the document is archived (all DoD items `[x]`, moved to `archive/`) | The date the work was verified complete and archived |
+| `date.last-activity` | When any work is done on the document — a task is marked `[~]`, `[x]`, or `[!]`, or the document is edited | The last time progress was made on this work |
+
+```yaml
+date:
+  created: "2026-07-11"
+  completed: "2026-07-15"      # set only when archiving
+  last-activity: "2026-07-14"  # updated on every work session
+```
+
+**Distinction from skill frontmatter dates:** skills use `date.last-used`
+(when the skill was invoked) and `date.knowledge-basis` (when 3rd-party tech
+refs were verified). Work-tracking documents use `date.last-activity` (when
+progress was made on the work) and `date.completed` (when the work was
+finished). The two date sets are not interchangeable — a skill is *used*, a
+work-tracking document is *worked on*.
+
+**When updating:**
+- Set `date.created` on creation only. Never change it afterward.
+- Update `date.last-activity` every time you mark a task `[~]`, `[x]`, or
+  `[!]`, or edit the document's content. This is the freshness signal for
+  active work — a stale `last-activity` on a `todo/` document means it may be
+  abandoned.
+- Set `date.completed` only when archiving (all DoD items `[x]`, `git mv` to
+  `archive/`). Never set it while the document is still in `todo/`.
+
+#### Archive Trigger
+
+A document moves from `todo/` to `archive/` when **all Definition of Done
+items are `[x]`** — verified complete, not just marked complete. Documents
+with any `[ ]` (pending), `[~]` (in-progress), or `[!]` (blocked) items remain
+in `todo/`.
+
+**Protocol:**
+
+1. Verify every DoD item is `[x]` with evidence (passing tests, clean tree,
+   deliverables match). Do not archive on intent alone.
+2. Update `date.completed` to the current date.
+3. Move the document via `git mv` (preserves history):
+   ```bash
+   git mv {root}/todo/{filename} {root}/archive/YYYY/MM/{filename}
+   ```
+   Where `YYYY/MM` is derived from the document's creation timestamp (the
+   `YYYYMMDDHHmm` prefix in the filename), not the completion date.
+4. Commit the archive move with a `#tag` array:
+   ```bash
+   git commit -m "docs({type}): archive completed {type} {slug}" \
+             -m "All DoD items verified [x]. Moved from todo/ to archive/{YYYY}/{MM}/." \
+             -m "#project-{project} #module-{type} #type-docs #skill-{type}-archived #skill-grm-created"
+   ```
+
+#### Backfilling Pre-Existing Documents
+
+Documents created before the two-stage lifecycle was adopted may still live
+at a legacy dated path (`{root}/YYYY/MM/{filename}`). To backfill:
+
+1. **Completed documents** — `git mv {root}/YYYY/MM/{filename} {root}/archive/YYYY/MM/{filename}` (use the filename's embedded timestamp for the archive `YYYY/MM/`). Set `date.completed` if missing.
+2. **In-progress documents** — `git mv {root}/YYYY/MM/{filename} {root}/todo/{filename}`. Leave `date.completed` unset.
+3. Commit the backfill with `docs: backfill {type} to todo/archive lifecycle`
+
+
+---
+description: Shared work-verification protocol — a subagent independently verifies that a story's acceptance criteria were actually implemented (not just marked done). Three layers: per-story verification (after testing, before [x] Done), final all-stories verification pass (after execution loop, before documentation phase), and dependency-path validation (a [x] Done story must not have any non-done story in its transitive dependency path). Distinct from code review (quality) and doubt-driven review (bugs) — this checks completeness. Wired into execute-upsert
+---
+
+### Work Verification Protocol
+
+This protocol addresses a specific failure mode: **work marked `[x] Done`
+that was never actually started or completed.** The existing review layers
+(code review for quality, doubt-driven review for bugs) do not catch this
+because they assume the work exists — they review a diff. If the diff is
+empty or the acceptance criteria were never implemented, those reviews have
+nothing to find. This protocol independently verifies **completeness**: did
+the agent do what was asked?
+
+#### Three Layers
+
+| Layer | When | What it checks | Scope |
+|-------|------|---------------|-------|
+| **Per-story verification** | After testing, before marking `[x] Done` | Did this story's acceptance criteria actually get implemented? | One story |
+| **Final all-stories verification** | After execution loop, before documentation | Re-verify every `[x] Done` story in the index | All stories |
+| **Dependency-path validation** | During final verification | No `[x] Done` story has a non-done story in its transitive dependency path | All dependency edges |
+
+All three layers use **fresh-context subagents** — the verifying subagent did
+not do the work and has no investment in the outcome. The subagent receives
+only the story file (acceptance criteria, sub-tasks) and the diff (or working
+tree state), not the orchestrator's reasoning or the dev subagent's summary.
+
+#### Layer 1: Per-Story Verification
+
+**When:** After the dev subagent has committed its work, tests pass, and the
+code review subagent has returned `CLEAN` — but **before** the orchestrator
+marks the story `[x] Done` in the index.
+
+**Why before `[x] Done`:** The status mark is the source of truth for
+cross-session progress tracking. If a story is marked `[x] Done` and then
+found incomplete, the next session skips it (per the "never re-dispatch a
+`[x] Done` story" rule). Catching incompleteness before the mark prevents
+false-completion from propagating.
+
+**Dispatch a verification subagent.** The subagent receives:
+- **Goal**: Verify that the story's acceptance criteria were actually
+  implemented — not just marked complete. Return a structured verdict.
+- **Inputs**:
+  - The story file path (for acceptance criteria, sub-tasks, relevant files)
+  - The commit hash or diff range (`pre-tag..post-tag` or `HEAD~1..HEAD`)
+  - The working tree state (for uncommitted changes)
+- **What to check** (in order):
+  1. **Acceptance criteria exist as code.** For each acceptance criterion in
+     the story file, find the code that implements it. If a criterion has no
+     corresponding implementation, the story is NOT done.
+  2. **Sub-tasks are actually completed.** For each sub-task marked `[x]` in
+     the story file, verify the work exists. A sub-task marked `[x]` with no
+     corresponding diff is a false-completion signal.
+  3. **Files listed in "Relevant Files" actually changed.** If the story file
+     claims files were modified, check that those files appear in the diff.
+     An empty diff with `[x]` marks is the strongest false-completion signal.
+  4. **Tests exist and pass for the implemented behavior.** Not just "tests
+     pass" — do tests exist that verify the acceptance criteria? If the
+     acceptance criterion says "user can log in" and no login test exists,
+     the story is NOT done.
+- **What NOT to check**: Code quality (that's code review's job), bugs
+  (that's doubt-driven review's job), architecture (that's the PRD's job).
+  This layer checks **completeness only** — does the work exist?
+- **What to return**: A structured verdict:
+  ```
+  VERIFICATION_VERDICT:VERIFIED|INCOMPLETE|NOT_STARTED
+  ```
+
+  - `VERIFIED` — every acceptance criterion has corresponding
+    implementation, every `[x]` sub-task has a diff, relevant files changed,
+    tests exist for the behavior. Proceed to mark `[x] Done`.
+  - `INCOMPLETE` — some acceptance criteria are implemented but others are
+    missing, or some sub-tasks lack diffs. Return the specific missing items.
+    Re-dispatch the dev subagent with the gaps as feedback. Do NOT mark
+    `[x] Done`.
+  - `NOT_STARTED` — the diff is empty or the work is entirely unrelated to
+    the story's acceptance criteria. The story was marked done without being
+    worked on. This is the most severe false-completion signal. Mark the
+    story back to `[ ] Todo` in the index, flag it for re-execution, and
+    note the incident in the story file under a `## Verification Failure`
+    section.
+
+**Act on the verdict:**
+- `VERIFIED` — mark `[x] Done` in the index, proceed to the next story.
+- `INCOMPLETE` — re-dispatch the dev subagent with the specific gaps. Loop
+  until `VERIFIED` or the dev subagent returns `BLOCKED`.
+- `NOT_STARTED` — mark `[ ] Todo` in the index, add a `## Verification
+  Failure` section to the story file documenting what happened, and re-dispatch
+  a fresh dev subagent. If the failure recurs, mark `[!] Blocked` with reason
+  `"Verification failed twice — dev subagent not producing work"` and surface
+  to the user in the Phase 7 Blocker Report.
+
+**Recording verification results.** After the verification subagent returns,
+add a one-line `## Verification` section to the story file (just under the
+frontmatter, above any `## Blocker` section):
+
+```markdown
+## Verification
+
+**Verdict**: VERIFIED | INCOMPLETE | NOT_STARTED
+**Checked by**: verification subagent (fresh context)
+**Date**: YYYY-MM-DD
+**Notes**: <one line — e.g., "all 4 acceptance criteria have implementations, 6 tests pass">
+```
+
+This section is the audit trail that verification ran. A story marked `[x]`
+Done without a `## Verification` section has NOT been verified.
+
+#### Layer 2: Final All-Stories Verification Pass
+
+**When:** After the execution loop ends (no more runnable stories) and
+before Phase 7 (Blocker Report) / Phase 8 (Document). This is a **new phase**
+inserted between the execution loop and the blocker report.
+
+**Why a final pass:** Per-story verification catches false-completion at the
+individual story level. But stories can interact — a story that was
+`VERIFIED` in isolation may be broken by a later story's changes (merge
+conflicts resolved incorrectly, shared state modified, tests that passed
+earlier now fail). The final pass re-verifies the complete state.
+
+**Dispatch one verification subagent per `[x] Done` story** (parallelizable
+if stories are independent — cap at 5 simultaneous per the concurrency rule
+in `parallel-dispatch.md`). Each subagent receives:
+- **Goal**: Re-verify that this story's acceptance criteria are still met
+  in the current working tree (not just at commit time).
+- **Inputs**: The story file, the current `HEAD` state (not the story's
+  original commit), the full diff from `main..HEAD`.
+- **What to check**: Same 4 checks as per-story verification, but against
+  the **current** state, not the story's commit. This catches regressions
+  introduced by later stories.
+- **What to return**: Same structured verdict
+  (`VERIFIED|INCOMPLETE|NOT_STARTED`).
+
+**Act on the verdicts:**
+- All `VERIFIED` — proceed to Phase 7/8.
+- Any `INCOMPLETE` — the story was complete at commit time but a later story
+  broke it. Re-dispatch a dev subagent to fix the regression. Loop until
+  `VERIFIED` or `BLOCKED`.
+- Any `NOT_STARTED` — the story's work was lost (e.g., a merge conflict
+  resolution deleted it). Mark `[ ] Todo`, add a `## Verification Failure`
+  section, and re-dispatch.
+
+**Summary output.** After all final verification subagents complete, emit a
+summary:
+
+```markdown
+### Final Verification Summary
+
+- <N> stories verified VERIFIED
+- <N> stories found INCOMPLETE (fixed: <M>, blocked: <K>)
+- <N> stories found NOT_STARTED (re-dispatched: <M>, blocked: <K>)
+```
+
+#### Layer 3: Dependency-Path Validation
+
+**When:** During the final all-stories verification pass (Layer 2), after
+all per-story verdicts are collected but before acting on them.
+
+**Why:** A story marked `[x] Done` that depends on a story marked `[ ] Todo`,
+`[~] In-Progress`, or `[!] Blocked` is logically impossible — you cannot
+have completed work that depends on incomplete work. This is a status
+inconsistency that indicates either (a) the dependency was wrong, (b) the
+done story didn't actually need the dependency, or (c) the done story was
+falsely marked complete.
+
+**Algorithm:**
+
+1. Read the task index file. Build a dependency graph: for each story, list
+   its `dependencies` field (story IDs).
+2. For each story marked `[x] Done`:
+   a. Walk its transitive dependency path (recursively follow `dependencies`
+      until reaching stories with no dependencies).
+   b. If any story in the transitive path is `[ ] Todo`, `[~] In-Progress`,
+      or `[!] Blocked`:
+      - **Flag the `[x] Done` story as `DEPENDENCY_VIOLATION`**.
+      - Record which dependency is not done and its status.
+3. Report all `DEPENDENCY_VIOLATION` findings.
+
+**Act on violations:**
+- For each `DEPENDENCY_VIOLATION`:
+  - If the dependency is `[!] Blocked`: the done story cannot actually be
+    done (its dependency is blocked). Demote the done story to `[!] Blocked`
+    with reason `"Dependency <ID> is blocked — story cannot be complete"`.
+  - If the dependency is `[ ] Todo` or `[~] In-Progress`: the dependency was
+    skipped. Either:
+    - The dependency was wrongly listed (the done story doesn't actually
+      need it) → remove the dependency from the story's `dependencies` field
+      and note the correction.
+    - The dependency was skipped (the done story was marked complete without
+      its prerequisite) → demote the done story to `[ ] Todo` and re-dispatch
+    after the dependency completes.
+  - Surface all violations in the Final Verification Summary so the user can
+    see the status inconsistencies.
+
+**Dependency-path validation script (deterministic check):**
+
+```bash
+#!/usr/bin/env bash
+# validate-dependency-paths.sh — check no [x] Done story has a non-done
+# transitive dependency. Reads the task index file, outputs violations.
+# Exit 0 = no violations, exit 1 = violations found.
+#
+# Usage: validate-dependency-paths.sh <index-file-path>
+# Output: one line per violation: "STORY-ID -> DEP-ID (DEP-STATUS)"
+
+set -euo pipefail
+INDEX_FILE="${1:?Usage: $0 <index-file-path>}"
+
+# Extract story IDs, statuses, and dependencies from the index table.
+# Assumes the table format from tasks-processor.md:
+#   | Story ID | Title | Phase | Status | ... | Dependencies | ...
+# Status is column 4, Dependencies is column 7 (1-indexed).
+# This is a simplified parser — adapt to the actual index format.
+
+python3 - "$INDEX_FILE" <<'PYEOF'
+import re, sys, collections
+
+index_file = sys.argv[1]
+with open(index_file) as f:
+    lines = f.readlines()
+
+# Parse table rows: | PP-III | title | phase | [status] | ... | deps | ...
+stories = {}  # id -> (status, [dep_ids])
+for line in lines:
+    m = re.match(r'\|\s*(\d{2}-\d{3})\s*\|.*?\|\s*(\[.\])\s*\|.*?\|\s*(.*?)\s*\|', line)
+    if not m:
+        continue
+    sid, status, deps_str = m.group(1), m.group(2), m.group(3)
+    deps = [d.strip() for d in deps_str.split(',') if d.strip() and d.strip() != '—']
+    stories[sid] = (status, deps)
+
+DONE = '[x]'
+NOT_DONE = {'[ ]', '[~]', '[!]'}
+
+def transitive_deps(sid, visited=None):
+    if visited is None:
+        visited = set()
+    if sid not in stories:
+        return []
+    _, deps = stories[sid]
+    result = []
+    for d in deps:
+        if d in visited:
+            continue
+        visited.add(d)
+        result.append(d)
+        result.extend(transitive_deps(d, visited))
+    return result
+
+violations = []
+for sid, (status, deps) in stories.items():
+    if status != DONE:
+        continue
+    for dep in transitive_deps(sid):
+        if dep not in stories:
+            continue
+        dep_status, _ = stories[dep]
+        if dep_status in NOT_DONE:
+            violations.append(f"{sid} -> {dep} ({dep_status})")
+
+if violations:
+    for v in violations:
+        print(v)
+    sys.exit(1)
+else:
+    print("OK: no dependency-path violations")
+    sys.exit(0)
+PYEOF
+```
+
+This script can be materialized into the execute-upsert skill's `scripts/`
+directory and run as a `[script]` DoD check. It provides deterministic
+dependency-path validation — no judgment required.
+
+#### Relationship to Existing Review Layers
+
+| Layer | What it checks | When it runs | Verdict |
+|-------|---------------|-------------|---------|
+| Code review (`code-review-guidance`) | Code quality (infrastructure, schemas, security, performance) | After dev subagent commit, before doubt-driven review | `CLEAN\|NEEDS_FIXES\|BLOCKED` |
+| Doubt-driven review | Bugs, adversarial findings | After code review `CLEAN`, before verification | `valid-must-fix\|valid-defer\|invalid\|ambiguous` |
+| **Work verification (this protocol)** | **Completeness — was the work actually done?** | **After doubt-driven review, before `[x] Done`** | **`VERIFIED\|INCOMPLETE\|NOT_STARTED`** |
+
+The three layers are complementary:
+- Code review asks "is the code good?"
+- Doubt-driven review asks "what is wrong with the code?"
+- Work verification asks "does the code exist and does it do what was asked?"
+
+All three must pass before a story is marked `[x] Done`.
+
+#### Anti-Rationalization
+
+| Rationalization | Reality |
+|---|---|
+| "The dev subagent said it's done" | The dev subagent marked its own work done. Verify independently. |
+| "Tests pass, so it's done" | Tests passing means tests pass. It does not mean the acceptance criteria were implemented. |
+| "The diff looks big, so work happened" | A large diff can be boilerplate, generated code, or unrelated changes. Check that the diff implements the acceptance criteria. |
+| "I'll skip verification for this small story" | Small stories are the most commonly false-completed — they're easy to mark done without doing. Verify every story. |
+| "The final pass is redundant — I already verified per-story" | Per-story verification checks at commit time. The final pass checks at completion time. Later stories can break earlier ones. |
+| "Dependency-path validation is overkill" | A `[x] Done` story with a `[!] Blocked` dependency is a logical impossibility. If it happens, something is wrong. Catch it. |
+
+
 #!/usr/bin/env bash
 # resolve-reference.sh — three-tier fallback resolver for skill/bundle references
 #
@@ -1915,35 +2614,35 @@ OUT_PATH=""
 
 # --- Parse args ---
 while [[ $# -gt 0 ]]; do
-    case "$1" in
-        --tier)
-            TIER="$2"
-            shift 2
-            ;;
-        --out)
-            OUT_PATH="$2"
-            shift 2
-            ;;
-        --help|-h)
-            sed -n '2,40p' "$0"
-            exit 0
-            ;;
-        *)
-            if [[ -z "$REF" ]]; then
-                REF="$1"
-                shift
-            else
-                echo "ERROR: unexpected argument: $1" >&2
-                exit 1
-            fi
-            ;;
-    esac
+	case "$1" in
+	--tier)
+		TIER="$2"
+		shift 2
+		;;
+	--out)
+		OUT_PATH="$2"
+		shift 2
+		;;
+	--help | -h)
+		sed -n '2,40p' "$0"
+		exit 0
+		;;
+	*)
+		if [[ -z "$REF" ]]; then
+			REF="$1"
+			shift
+		else
+			echo "ERROR: unexpected argument: $1" >&2
+			exit 1
+		fi
+		;;
+	esac
 done
 
 if [[ -z "$REF" ]]; then
-    echo "ERROR: missing reference argument" >&2
-    echo "Usage: resolve-reference.sh <ref> [--tier <1|2|3>] [--out <path>]" >&2
-    exit 1
+	echo "ERROR: missing reference argument" >&2
+	echo "Usage: resolve-reference.sh <ref> [--tier <1|2|3>] [--out <path>]" >&2
+	exit 1
 fi
 
 # --- Determine the script's own directory (for tier 3 materialized copies) ---
@@ -1958,163 +2657,163 @@ RESOLVE_REFERENCE_REPO="${RESOLVE_REFERENCE_REPO:-levonk/skills-releases}"
 # --- Walk up from $PWD looking for a directory containing the ref ---
 # Tier 1: local relative path (development, full-profile install)
 find_local_ref() {
-    local ref="$1"
-    local dir="$PWD"
-    while [[ "$dir" != "/" ]]; do
-        # Try: <dir>/src/<ref>  (skills-src source tree)
-        if [[ -f "$dir/src/$ref" ]]; then
-            echo "$dir/src/$ref"
-            return 0
-        fi
-        # Try: <dir>/<ref>  (build output, or a flat knowledge/skills tree)
-        if [[ -f "$dir/$ref" ]]; then
-            echo "$dir/$ref"
-            return 0
-        fi
-        # Try: <dir>/current/<ref>  (profile-specific layout)
-        if [[ -f "$dir/current/$ref" ]]; then
-            echo "$dir/current/$ref"
-            return 0
-        fi
-        dir="$(dirname "$dir")"
-    done
-    return 1
+	local ref="$1"
+	local dir="$PWD"
+	while [[ "$dir" != "/" ]]; do
+		# Try: <dir>/src/<ref>  (skills-src source tree)
+		if [[ -f "$dir/src/$ref" ]]; then
+			echo "$dir/src/$ref"
+			return 0
+		fi
+		# Try: <dir>/<ref>  (build output, or a flat knowledge/skills tree)
+		if [[ -f "$dir/$ref" ]]; then
+			echo "$dir/$ref"
+			return 0
+		fi
+		# Try: <dir>/current/<ref>  (profile-specific layout)
+		if [[ -f "$dir/current/$ref" ]]; then
+			echo "$dir/current/$ref"
+			return 0
+		fi
+		dir="$(dirname "$dir")"
+	done
+	return 1
 }
 
 # --- Tier 2: fetch from published repo ---
 # Skill refs use `pnpm dlx skills add`; knowledge refs use curl.
 fetch_remote_ref() {
-    local ref="$1"
-    if [[ "$ref" == skills/* ]]; then
-        # Skill reference — use the official skills CLI.
-        # Derive skill name: skills/<category>/<skill-name>/<rest>
-        local skill_name
-        skill_name="$(echo "$ref" | awk -F/ '{print $3}')"
-        if [[ -z "$skill_name" ]]; then
-            return 1
-        fi
-        local rest
-        rest="$(echo "$ref" | awk -F/ '{for(i=4;i<=NF;i++) printf "%s%s", $i, (i<NF?"/":"")}')"
-        # Telemetry gating: allow for levonk-owned repos, disable for third-party.
-        local telemetry_env=()
-        if [[ "$RESOLVE_REFERENCE_REPO" == levonk/* ]]; then
-            telemetry_env=(env -u DISABLE_TELEMETRY -u DO_NOT_TRACK)
-        else
-            telemetry_env=(env DISABLE_TELEMETRY=1 DO_NOT_TRACK=1)
-        fi
-        # Install the skill to a temp dir, then read the file.
-        local tmp_install
-        tmp_install="$(mktemp -d)"
-        if ! "${telemetry_env[@]}" pnpm dlx skills add "$RESOLVE_REFERENCE_REPO" --yes --skill "$skill_name" --path "$tmp_install" >/dev/null 2>&1; then
-            rm -rf "$tmp_install"
-            return 1
-        fi
-        local installed_file="$tmp_install/.agents/skills/$skill_name/$rest"
-        if [[ -f "$installed_file" ]]; then
-            cat "$installed_file"
-            rm -rf "$tmp_install"
-            return 0
-        fi
-        rm -rf "$tmp_install"
-        return 1
-    elif [[ "$ref" == knowledge/* ]]; then
-        # Knowledge reference — curl from raw.githubusercontent.com.
-        # raw.githubusercontent.com returns file content directly (not HTML).
-        local url="https://raw.githubusercontent.com/${RESOLVE_REFERENCE_REPO}/main/$ref"
-        if curl -fsSL "$url" 2>/dev/null; then
-            return 0
-        fi
-        return 1
-    else
-        # Unknown ref type — try curl as a last resort.
-        local url="https://raw.githubusercontent.com/${RESOLVE_REFERENCE_REPO}/main/$ref"
-        if curl -fsSL "$url" 2>/dev/null; then
-            return 0
-        fi
-        return 1
-    fi
+	local ref="$1"
+	if [[ "$ref" == skills/* ]]; then
+		# Skill reference — use the official skills CLI.
+		# Derive skill name: skills/<category>/<skill-name>/<rest>
+		local skill_name
+		skill_name="$(echo "$ref" | awk -F/ '{print $3}')"
+		if [[ -z "$skill_name" ]]; then
+			return 1
+		fi
+		local rest
+		rest="$(echo "$ref" | awk -F/ '{for(i=4;i<=NF;i++) printf "%s%s", $i, (i<NF?"/":"")}')"
+		# Telemetry gating: allow for levonk-owned repos, disable for third-party.
+		local telemetry_env=()
+		if [[ "$RESOLVE_REFERENCE_REPO" == levonk/* ]]; then
+			telemetry_env=(env -u DISABLE_TELEMETRY -u DO_NOT_TRACK)
+		else
+			telemetry_env=(env DISABLE_TELEMETRY=1 DO_NOT_TRACK=1)
+		fi
+		# Install the skill to a temp dir, then read the file.
+		local tmp_install
+		tmp_install="$(mktemp -d)"
+		if ! "${telemetry_env[@]}" pnpm dlx skills add "$RESOLVE_REFERENCE_REPO" --yes --skill "$skill_name" --path "$tmp_install" >/dev/null 2>&1; then
+			rm -rf "$tmp_install"
+			return 1
+		fi
+		local installed_file="$tmp_install/.agents/skills/$skill_name/$rest"
+		if [[ -f "$installed_file" ]]; then
+			cat "$installed_file"
+			rm -rf "$tmp_install"
+			return 0
+		fi
+		rm -rf "$tmp_install"
+		return 1
+	elif [[ "$ref" == knowledge/* ]]; then
+		# Knowledge reference — curl from raw.githubusercontent.com.
+		# raw.githubusercontent.com returns file content directly (not HTML).
+		local url="https://raw.githubusercontent.com/${RESOLVE_REFERENCE_REPO}/main/$ref"
+		if curl -fsSL "$url" 2>/dev/null; then
+			return 0
+		fi
+		return 1
+	else
+		# Unknown ref type — try curl as a last resort.
+		local url="https://raw.githubusercontent.com/${RESOLVE_REFERENCE_REPO}/main/$ref"
+		if curl -fsSL "$url" 2>/dev/null; then
+			return 0
+		fi
+		return 1
+	fi
 }
 
 # --- Tier 3: materialized copy inside this skill/bundle ---
 find_materialized_ref() {
-    local ref="$1"
-    # The materialized tree lives at references/included/<ref> relative to
-    # the skill's root directory. The script is in <skill-root>/scripts/,
-    # so the skill root is the parent of SCRIPT_DIR.
-    local skill_root
-    skill_root="$(dirname "$SCRIPT_DIR")"
-    local mat_path="$skill_root/references/included/$ref"
-    if [[ -f "$mat_path" ]]; then
-        echo "$mat_path"
-        return 0
-    fi
-    return 1
+	local ref="$1"
+	# The materialized tree lives at references/included/<ref> relative to
+	# the skill's root directory. The script is in <skill-root>/scripts/,
+	# so the skill root is the parent of SCRIPT_DIR.
+	local skill_root
+	skill_root="$(dirname "$SCRIPT_DIR")"
+	local mat_path="$skill_root/references/included/$ref"
+	if [[ -f "$mat_path" ]]; then
+		echo "$mat_path"
+		return 0
+	fi
+	return 1
 }
 
 # --- Output helper: write content to stdout or to --out path ---
 emit_content() {
-    local content="$1"
-    if [[ -n "$OUT_PATH" ]]; then
-        mkdir -p "$(dirname "$OUT_PATH")"
-        printf '%s' "$content" > "$OUT_PATH"
-        echo "Wrote: $OUT_PATH" >&2
-    else
-        printf '%s' "$content"
-    fi
+	local content="$1"
+	if [[ -n "$OUT_PATH" ]]; then
+		mkdir -p "$(dirname "$OUT_PATH")"
+		printf '%s' "$content" >"$OUT_PATH"
+		echo "Wrote: $OUT_PATH" >&2
+	else
+		printf '%s' "$content"
+	fi
 }
 
 # --- Main resolution logic ---
 resolve() {
-    local content=""
+	local content=""
 
-    # Tier 1: local relative path
-    if [[ -z "$TIER" || "$TIER" == "1" ]]; then
-        local local_path
-        if local_path="$(find_local_ref "$REF" 2>/dev/null)" && [[ -n "$local_path" ]]; then
-            content="$(cat "$local_path")"
-            emit_content "$content"
-            echo "[resolve-reference] tier 1 (local): $local_path" >&2
-            return 0
-        fi
-        if [[ "$TIER" == "1" ]]; then
-            echo "ERROR: tier 1 forced but local path not found for: $REF" >&2
-            return 3
-        fi
-    fi
+	# Tier 1: local relative path
+	if [[ -z "$TIER" || "$TIER" == "1" ]]; then
+		local local_path
+		if local_path="$(find_local_ref "$REF" 2>/dev/null)" && [[ -n "$local_path" ]]; then
+			content="$(cat "$local_path")"
+			emit_content "$content"
+			echo "[resolve-reference] tier 1 (local): $local_path" >&2
+			return 0
+		fi
+		if [[ "$TIER" == "1" ]]; then
+			echo "ERROR: tier 1 forced but local path not found for: $REF" >&2
+			return 3
+		fi
+	fi
 
-    # Tier 2: fetch from published repo
-    if [[ -z "$TIER" || "$TIER" == "2" ]]; then
-        if content="$(fetch_remote_ref "$REF" 2>/dev/null)" && [[ -n "$content" ]]; then
-            emit_content "$content"
-            echo "[resolve-reference] tier 2 (remote): $RESOLVE_REFERENCE_REPO/$REF" >&2
-            return 0
-        fi
-        if [[ "$TIER" == "2" ]]; then
-            echo "ERROR: tier 2 forced but remote fetch failed for: $REF" >&2
-            return 3
-        fi
-    fi
+	# Tier 2: fetch from published repo
+	if [[ -z "$TIER" || "$TIER" == "2" ]]; then
+		if content="$(fetch_remote_ref "$REF" 2>/dev/null)" && [[ -n "$content" ]]; then
+			emit_content "$content"
+			echo "[resolve-reference] tier 2 (remote): $RESOLVE_REFERENCE_REPO/$REF" >&2
+			return 0
+		fi
+		if [[ "$TIER" == "2" ]]; then
+			echo "ERROR: tier 2 forced but remote fetch failed for: $REF" >&2
+			return 3
+		fi
+	fi
 
-    # Tier 3: materialized copy
-    if [[ -z "$TIER" || "$TIER" == "3" ]]; then
-        local mat_path
-        if mat_path="$(find_materialized_ref "$REF" 2>/dev/null)" && [[ -n "$mat_path" ]]; then
-            content="$(cat "$mat_path")"
-            emit_content "$content"
-            echo "[resolve-reference] tier 3 (materialized): $mat_path" >&2
-            return 0
-        fi
-        if [[ "$TIER" == "3" ]]; then
-            echo "ERROR: tier 3 forced but materialized copy not found for: $REF" >&2
-            return 3
-        fi
-    fi
+	# Tier 3: materialized copy
+	if [[ -z "$TIER" || "$TIER" == "3" ]]; then
+		local mat_path
+		if mat_path="$(find_materialized_ref "$REF" 2>/dev/null)" && [[ -n "$mat_path" ]]; then
+			content="$(cat "$mat_path")"
+			emit_content "$content"
+			echo "[resolve-reference] tier 3 (materialized): $mat_path" >&2
+			return 0
+		fi
+		if [[ "$TIER" == "3" ]]; then
+			echo "ERROR: tier 3 forced but materialized copy not found for: $REF" >&2
+			return 3
+		fi
+	fi
 
-    echo "ERROR: could not resolve reference at any tier: $REF" >&2
-    echo "  Tier 1 (local): not found in src/ tree walking up from $PWD" >&2
-    echo "  Tier 2 (remote): fetch from $RESOLVE_REFERENCE_REPO failed" >&2
-    echo "  Tier 3 (materialized): not found in $SCRIPT_DIR/../references/included/" >&2
-    return 2
+	echo "ERROR: could not resolve reference at any tier: $REF" >&2
+	echo "  Tier 1 (local): not found in src/ tree walking up from $PWD" >&2
+	echo "  Tier 2 (remote): fetch from $RESOLVE_REFERENCE_REPO failed" >&2
+	echo "  Tier 3 (materialized): not found in $SCRIPT_DIR/../references/included/" >&2
+	return 2
 }
 
 resolve
@@ -2177,6 +2876,15 @@ skill depends on:
   if diagram-upsert is not separately installed). Used in Phase 4 (PRD) to
   produce Mermaid architecture and UX-flow diagrams that the PRD template
   requires
+- `references/doubt-driven-review.md` — adversarial fresh-context pre-commit
+  review process for non-trivial stories (inlined at build time from the
+  doubt-driven-review workflow). Used in Phase 6 between code review and
+  commit for stories that cross module boundaries, introduce branching logic,
+  or have irreversible blast radius
+- `references/debugging-protocol.md` — systematic root-cause debugging
+  process for test failures and build errors (inlined at build time from the
+  debugging-protocol workflow). Used in Phase 6 when a dev subagent returns
+  with test failures, before re-dispatching with feedback
 
 The skill's phases, status conventions, and autonomy rules are binding
 whether the skill was invoked through the registry or read manually.
@@ -2216,7 +2924,17 @@ Phase 6: Execute ────── loop: subagent per runnable story
 Phase 7: Blocker Report ─ present all blockers with question/options/rec/why
     │
     ▼
+Phase 7.5: Final Verification ─ re-verify every [x] Done story (fresh context)
+    │                              check for regressions, skipped per-story
+    │                              verification, and dependency-path violations
+    │                              (no [x] Done story may have a non-done
+    │                              transitive dependency)
+    ▼
 Phase 8: Document ───── update PRD, task files, project docs
+    │                     ┌── all stories [x] Done? ──→ Archive feature
+    │                     │   (git mv todo/ → archive/YYYY/MM/)
+    ▼                     ▼
+Done
 ```
 
 **Disruption Handoff** (see the include above): if the pipeline reaches a
@@ -2312,6 +3030,16 @@ pipeline. Otherwise, proceed to Phase 3.
 If the request is large, briefly summarize your assessment and proceed to
 Phase 3.
 
+### Anti-Rationalization
+
+| Rationalization | Reality |
+|---|---|
+| "This is simple, I do not need the pipeline" | Simple tasks do not need the full pipeline, but they still need acceptance criteria. If the heuristic says large, run the pipeline. |
+| "I can hold the plan in my head" | Context windows are finite. Written plans survive session boundaries and compaction. |
+| "The user knows what they want" | Even clear requests have implicit assumptions. The PRD surfaces those assumptions before code. |
+| "Planning is overhead" | Planning is the task. Implementation without a plan is just typing. A 15-minute PRD prevents hours of rework. |
+| "Requirements will change anyway" | That is why the PRD is a living document. An outdated PRD is still better than no PRD. |
+
 ## Phase 3: Establish Technologies
 
 Detect the project's tech stack and establish it as a binding constraint for
@@ -2387,7 +3115,7 @@ tools on the host via `npm`, `brew`, `apt`, `pip install --user`, `pipx`,
 ### After Establishment
 
 Store the tech context block in the PRD file's frontmatter (or in a
-sidecar file `internal-docs/feature/YYYY/MM/{slug}/tech-context.txt` if no
+sidecar file `internal-docs/feature/todo/{slug}/tech-context.txt` if no
 PRD exists yet). Every subagent dispatch in Phase 6 receives this block as
 a binding constraint. If the tech stack changes during execution (e.g., a
 story introduces a new dependency), update the tech context block and
@@ -2399,7 +3127,9 @@ Proceed to Phase 4.
 
 ### If a PRD exists
 
-- Locate the PRD file under `internal-docs/feature/YYYY/MM/{slug}/`.
+- Locate the PRD file under `internal-docs/feature/todo/{slug}/` (or
+  `internal-docs/feature/archive/YYYY/MM/{slug}/` if the feature was already
+  completed — though you would not be re-executing a completed feature).
 - Read it to understand the scope.
 - Proceed to Phase 5.
 
@@ -2407,6 +3137,37 @@ Proceed to Phase 4.
 
 - Ask clarifying questions following the clarifying-questions protocol (see
   `includes/clarifying-questions.md`).
+- **Surface assumptions immediately.** Before writing any PRD content, list
+  what is being assumed:
+
+  ```
+  ASSUMPTIONS I'M MAKING:
+  1. [assumption about requirements]
+  2. [assumption about architecture]
+  3. [assumption about scope]
+  → Correct me now or I'll proceed with these.
+  ```
+
+  Do not silently fill in ambiguous requirements. The PRD's entire purpose is
+  to surface misunderstandings before code gets written — assumptions are the
+  most dangerous form of misunderstanding.
+
+- **Reframe vague instructions as success criteria.** When receiving vague
+  requirements, translate them into concrete conditions:
+
+  ```
+  REQUIREMENT: "Make the dashboard faster"
+
+  REFRAMED SUCCESS CRITERIA:
+  - Dashboard LCP < 2.5s on 4G connection
+  - Initial data load completes in < 500ms
+  - No layout shift during load (CLS < 0.1)
+  → Are these the right targets?
+  ```
+
+  This lets the pipeline loop, retry, and problem-solve toward a clear goal
+  rather than guessing what "faster" means.
+
 - `[fork]` Create the PRD following the process and template defined in
   `references/greenfield-prd.md` (the greenfield-prd workflow's content,
   inlined at build time). The subagent receives:
@@ -2415,7 +3176,7 @@ Proceed to Phase 4.
     `AGENTS.md` path, and the PRD template from `references/greenfield-prd.md`.
   - **Constraints**: Follow the greenfield-prd workflow's template and process
     exactly (as inlined in `references/greenfield-prd.md`). Save to
-    `internal-docs/feature/YYYY/MM/{slug}/`.
+    `internal-docs/feature/todo/{slug}/`.
   - **Diagrams**: The PRD template includes "Architecture Diagram" and
     "User Experience Flow (Graphical Apps Only)" sections. The subagent MUST
     fill both with Mermaid diagrams appropriate to the feature:
@@ -2453,11 +3214,49 @@ Proceed to Phase 4.
 ### If task files exist
 
 - Locate the task index file
-  (`internal-docs/feature/YYYY/MM/{slug}/tasks/index-[PRD-NAME].md`).
+  (`internal-docs/feature/todo/{slug}/tasks/index-[PRD-NAME].md`).
 - Read it to understand the story breakdown and current status.
 - Proceed to Phase 6.
 
 ### If no task files exist
+
+**Slice vertically, not horizontally.** Instead of building all the database,
+then all the API, then all the UI — build one complete feature path at a time.
+Each vertical slice delivers working, testable functionality:
+
+```
+Bad (horizontal slicing):
+  Task 1: Build entire database schema
+  Task 2: Build all API endpoints
+  Task 3: Build all UI components
+  Task 4: Connect everything
+
+Good (vertical slicing):
+  Task 1: User can create an account (schema + API + UI for registration)
+  Task 2: User can log in (auth schema + API + UI for login)
+  Task 3: User can create a task (task schema + API + UI for creation)
+  Task 4: User can view task list (query + API + UI for list view)
+```
+
+**Task sizing.** Each task should be completable in a single focused session.
+Use this table to size tasks:
+
+| Size | Files | Scope | Action |
+|------|-------|-------|--------|
+| XS | 1 | Single function or config change | OK |
+| S | 1-2 | One component or endpoint | OK |
+| M | 3-5 | One feature slice | OK — ideal size |
+| L | 5-8 | Multi-component feature | Break down further |
+| XL | 8+ | Too large | Always break down |
+
+If a task is L or larger, break it into smaller tasks. A subagent performs
+best on S and M tasks.
+
+**When to break a task down further:**
+- It would take more than one focused session
+- Acceptance criteria cannot be described in 3 or fewer bullet points
+- It touches two or more independent subsystems
+- The task title contains "and" (a sign it is two tasks)
 
 - `[fork]` Create task files following the process and output format defined
   in `references/tasks-from-prd.md` (the tasks-from-prd workflow's content,
@@ -2592,8 +3391,9 @@ For each task story that isn't completed yet:
    **Parallel dispatch**: If two or more `[ ] Todo` stories have all
    dependencies `[x] Done` and the stories do not modify the same files,
    dispatch them as parallel background subagents — one per story, each in
-   its own git worktree. See `references/parallel-dispatch.md` for the
-   worktree setup, merge reconciliation protocol, and collision handling.
+   its own git worktree. Cap at 5 simultaneous subagents (API rate-limit
+   safety); see `references/parallel-dispatch.md` for the worktree setup,
+   concurrency cap, merge reconciliation protocol, and collision handling.
    The sequential loop below applies to stories that must run one at a
    time (shared-file conflicts, single-runnable-story phases).
 
@@ -2644,6 +3444,34 @@ For each task story that isn't completed yet:
      `npm`/`npx` in a pnpm project, never `jest` in a Vitest project, never
      host-level installs when `devbox run --` is the runner. This is a
      binding constraint, not a suggestion.
+   - **Simplicity and Scope Rules**: Inject the simplicity and scope
+     discipline rules (inlined above from `includes/simplicity-and-scope.md`)
+     verbatim into the dispatch prompt. The subagent MUST implement the
+     simplest thing that could work, touch only what the story requires, and
+     note — not fix — anything worth improving outside scope.
+   - **TDD Cycle**: The subagent MUST follow the test-driven development
+     cycle for any new logic or behavior:
+
+     ```
+     RED: Write a failing test that describes the desired behavior
+       → Test FAILS (confirming the behavior does not exist yet)
+     GREEN: Write the minimum code to make the test pass
+       → Test PASSES
+     REFACTOR: Clean up the implementation without changing behavior
+       → Tests still PASS
+     ```
+
+     For bug fixes, the subagent MUST follow the Prove-It Pattern: write a
+     test that reproduces the bug first (it fails), then fix the bug (the
+     test passes), then run the full suite (no regressions). "Seems right"
+     is never sufficient — there must be evidence (passing tests, build
+     output, runtime data).
+
+   - **Debugging Protocol**: If the subagent's tests fail, it MUST follow
+     the debugging protocol (inlined in `references/debugging-protocol.md`)
+     — Stop-the-Line, Reproduce, Localize, Reduce, Fix root cause, Guard
+     with a regression test, Verify end-to-end. The subagent does not guess
+     at fixes; it follows the structured process.
    - **Constraints**: Follow the tasks-processor workflow's work protocol
      exactly (as inlined in `references/tasks-processor.md`) — mark tasks
      in-progress, run tests, verify acceptance criteria, commit with
@@ -2687,7 +3515,8 @@ For each task story that isn't completed yet:
      in the code-review-guidance skill.
 
    **Act on the review verdict** (automated mode):
-   - `CLEAN` — proceed to the grm final commit (step 5 below).
+   - `CLEAN` — proceed to the doubt-driven review gate (below) before the
+    grm final commit.
    - `NEEDS_FIXES` — re-dispatch the dev subagent with the review findings
      as feedback. The dev subagent fixes the issues, commits, and the
      orchestrator re-runs the review. Loop until `CLEAN` or the dev
@@ -2697,6 +3526,64 @@ For each task story that isn't completed yet:
      decision. Mark the story `[!] Blocked` with the review findings in the
      `## Blocker` section, and continue to the next runnable story.
 
+  **Doubt-driven review gate (non-trivial stories only).** After the code
+  review subagent returns `CLEAN` but before the grm final commit, run
+  the doubt-driven review workflow (inlined in
+  `references/doubt-driven-review.md`) if the story is non-trivial:
+
+  - The story crosses a module or service boundary
+  - The story introduces branching logic or state management
+  - The story asserts a property the type system cannot verify (thread
+    safety, idempotence, ordering, invariants)
+  - The story's blast radius is irreversible (migration, public API change)
+
+  For trivial stories (single-file, obvious correctness, no branching),
+  skip this gate and proceed directly to the grm final commit.
+
+  The doubt-driven review dispatches a fresh-context subagent with an
+  adversarial prompt (find what is wrong, do not validate, do not
+  summarize). The subagent receives only the artifact (diff) and the
+  contract (story acceptance criteria) — not the orchestrator's reasoning.
+  Classify findings as valid-must-fix, valid-defer, invalid-false-positive,
+  or ambiguous. Valid-must-fix findings go back to the dev subagent before
+  commit. Ambiguous findings are surfaced to the user. See
+  `references/doubt-driven-review.md` for the full 5-step process
+  (CLAIM → EXTRACT → DOUBT → RECONCILE → STOP).
+
+  **Work verification gate (every story, no exceptions).** After the
+  doubt-driven review gate (if it ran) and **before** marking the story
+  `[x] Done` in the index, dispatch a work verification subagent following
+  the work-verification protocol (inlined above from
+  `includes/work-verification.md`). This is the **completeness** check —
+  distinct from code review (quality) and doubt-driven review (bugs). It
+  asks: did the agent actually do what was asked?
+
+  The verification subagent receives:
+  - **Goal**: Verify that the story's acceptance criteria were actually
+    implemented — not just marked complete. Return a structured verdict.
+  - **Inputs**: The story file path (acceptance criteria, sub-tasks,
+    relevant files), the commit hash or diff range (`pre-tag..post-tag` or
+    `HEAD~1..HEAD`), the working tree state.
+  - **What to return**: `VERIFICATION_VERDICT:VERIFIED|INCOMPLETE|NOT_STARTED`
+
+  Act on the verdict (see the work-verification protocol for full details):
+  - `VERIFIED` — proceed to mark `[x] Done` and the grm final commit.
+  - `INCOMPLETE` — re-dispatch the dev subagent with the specific gaps.
+    Loop until `VERIFIED` or `BLOCKED`.
+  - `NOT_STARTED` — mark `[ ] Todo` in the index, add a `## Verification
+    Failure` section to the story file, re-dispatch a fresh dev subagent.
+    If it fails twice, mark `[!] Blocked`.
+
+  Record the verification result in a `## Verification` section in the
+  story file. A story marked `[x] Done` without a `## Verification` section
+  has NOT been verified — the final verification pass (Phase 7.5) will
+  catch and flag it.
+
+  This gate runs on **every** story, including trivial ones. Trivial
+  stories are the most commonly false-completed — they are easy to mark
+  done without doing. The verification subagent is fast for trivial
+  stories (small diff, few acceptance criteria).
+
    **Human-in-the-loop mode**: If `skill-config.toml` configures
    `[review] mode = "human"`, the review subagent presents findings to the
    user instead of returning a structured verdict. The orchestrator waits
@@ -2705,8 +3592,8 @@ For each task story that isn't completed yet:
    every story.
 
    **Run the `git-repository-management` skill at story finish.** After the
-   subagent has committed its work and the orchestrator has verified the
-   story is `[x] Done`, invoke the grm skill's
+   work verification subagent has returned `VERIFIED` and the orchestrator has
+   marked the story `[x] Done` in the index, invoke the grm skill's
    `git-commit-batch.sh --slug {story-id+slug}` to flush any remaining
    orchestrator-side changes (index file status update, story file
    relevant-files section, etc.) into a final story commit. The grm skill
@@ -2764,6 +3651,17 @@ the current execution state, and tell the user the handoff path + resume
 command. Do not silently terminate with work remaining. Clean completions
 (all `[x] Done`) skip the handoff — proceed to Phase 7/8.
 
+### Anti-Rationalization (Phase 6)
+
+| Rationalization | Reality |
+|---|---|
+| "The subagent said it works" | Verify with evidence — passing tests, build output, runtime data. "Seems right" is never sufficient. |
+| "I will skip the review for this small story" | Small stories pass review in seconds. The cost of skipping review on a wrong "small" story is not small. |
+| "The tests pass, so it is done" | Tests passing is necessary but not sufficient. The project quality floor (inlined above) checks correctness, quality, integration, documentation, and ship-readiness. |
+| "I can fix this bug by just..." | Follow the debugging protocol (inlined in `references/debugging-protocol.md`). Reproduce first. Guessing wastes time. |
+| "This decision is probably right" | If the story is non-trivial, run the doubt-driven review gate. Confidence is not correctness. |
+| "I cleaned up some adjacent code while I was here" | That is scope creep. The simplicity and scope rules (inlined above) forbid it. Note it, do not fix it. |
+
 ## Phase 7: Blocker Report
 
 After the execution loop ends (no more runnable stories), if ANY stories are
@@ -2820,11 +3718,101 @@ stories, and pick up the now-unblocked stories.
   (remove the `## Blocker` section, set status back to `[ ] Todo`), update
   the index, commit, and re-enter the Phase 6 execution loop for that story.
 - If the user says "stop here" or does not resolve the blockers, proceed to
-  Phase 8 (Document) with the blocked stories left as `[!] Blocked` — the
-  documentation phase will record them as deferred with reasons.
+  Phase 7.5 (Final Verification) with the blocked stories left as
+  `[!] Blocked` — the documentation phase will record them as deferred with
+  reasons.
 - Do NOT silently leave blockers unresolved — the report must be the last
-  thing the user sees before Phase 8, and Phase 8 must reference the
+  thing the user sees before Phase 7.5, and Phase 8 must reference the
   blockers in the PRD's "Deferred Items" section.
+
+## Phase 7.5: Final Verification
+
+After the execution loop ends and the Phase 7 Blocker Report has been
+presented (if applicable), run a **final all-stories verification pass**
+following the work-verification protocol (inlined above from
+`includes/work-verification.md`). This phase catches:
+
+1. **Regressions** — a story that was `VERIFIED` at commit time but was
+   broken by a later story's changes (merge conflicts resolved incorrectly,
+   shared state modified, tests that passed earlier now fail).
+2. **False-completion propagation** — a story marked `[x] Done` without a
+   `## Verification` section (the per-story verification gate was skipped).
+3. **Dependency-path violations** — a story marked `[x] Done` that has a
+   `[ ] Todo`, `[~] In-Progress`, or `[!] Blocked` story in its transitive
+   dependency path. This is a logical impossibility — you cannot have
+   completed work that depends on incomplete work.
+
+### Step 1: Re-verify every [x] Done story
+
+Dispatch one verification subagent per `[x] Done` story (parallelizable if
+stories are independent — cap at 5 simultaneous per the concurrency rule in
+`references/parallel-dispatch.md`). Each subagent receives:
+
+- **Goal**: Re-verify that this story's acceptance criteria are still met
+  in the current working tree (not just at commit time).
+- **Inputs**: The story file, the current `HEAD` state (not the story's
+  original commit), the full diff from `main..HEAD`.
+- **What to check**: Same 4 checks as per-story verification (acceptance
+  criteria exist as code, sub-tasks completed, relevant files changed, tests
+  exist and pass), but against the **current** state.
+- **What to return**: `VERIFICATION_VERDICT:VERIFIED|INCOMPLETE|NOT_STARTED`
+
+Also check for the `## Verification` section in each story file. If it is
+missing, the per-story verification gate was skipped — flag the story as
+`NOT_VERIFIED` (treat same as `INCOMPLETE`).
+
+### Step 2: Dependency-path validation
+
+Run dependency-path validation across all stories in the task index. This
+is a deterministic check — use the `validate-dependency-paths.sh` script
+from the work-verification protocol (or the equivalent logic):
+
+1. Read the task index file. Build a dependency graph from each story's
+   `dependencies` field.
+2. For each story marked `[x] Done`, walk its transitive dependency path.
+3. If any story in the transitive path is `[ ] Todo`, `[~] In-Progress`, or
+   `[!] Blocked`, flag a `DEPENDENCY_VIOLATION`.
+
+Act on violations:
+- Dependency is `[!] Blocked`: demote the done story to `[!] Blocked` with
+  reason `"Dependency <ID> is blocked — story cannot be complete"`.
+- Dependency is `[ ] Todo` or `[~] In-Progress`: either the dependency was
+  wrongly listed (remove it and note the correction) or the dependency was
+  skipped (demote the done story to `[ ] Todo` and re-dispatch after the
+  dependency completes).
+
+### Step 3: Act on verification verdicts
+
+- All `VERIFIED` and no `DEPENDENCY_VIOLATION` — proceed to Phase 8.
+- Any `INCOMPLETE` — the story was complete at commit time but a later story
+  broke it. Re-dispatch a dev subagent to fix the regression. Loop until
+  `VERIFIED` or `BLOCKED`.
+- Any `NOT_STARTED` — the story's work was lost. Mark `[ ] Todo`, add a
+  `## Verification Failure` section, re-dispatch.
+- Any `DEPENDENCY_VIOLATION` — apply the violation handling above.
+
+### Step 4: Emit final verification summary
+
+```markdown
+### Final Verification Summary
+
+- <N> stories verified VERIFIED
+- <N> stories found INCOMPLETE (fixed: <M>, blocked: <K>)
+- <N> stories found NOT_STARTED (re-dispatched: <M>, blocked: <K>)
+- <N> DEPENDENCY_VIOLATION found (demoted: <M>, corrected: <K>)
+```
+
+Only after all stories are `VERIFIED` with no `DEPENDENCY_VIOLATION` (or
+remaining issues are `[!] Blocked` and surfaced in the Blocker Report),
+proceed to Phase 8.
+
+### Anti-Rationalization (Phase 7.5)
+
+| Rationalization | Reality |
+|---|---|
+| "I already verified per-story" | Per-story verification checks at commit time. The final pass checks at completion time. Later stories can break earlier ones. |
+| "Dependency-path validation is overkill" | A `[x] Done` story with a `[!] Blocked` dependency is a logical impossibility. If it happens, something is wrong. Catch it. |
+| "The final pass is redundant" | The final pass catches regressions, skipped per-story verification, and dependency violations that per-story verification cannot see. |
 
 ## Phase 8: Document
 
@@ -2875,7 +3863,7 @@ no work should be left dirty in the tree.
 
 2. **Group remaining changes into commits** by functional area, following the
    Commit Quality Rules from the Pre-Task Commit Checkpoint protocol above:
-   - **PRD and task files** (`internal-docs/feature/...`) as one commit:
+   - **PRD and task files** (`internal-docs/feature/todo/{slug}/...`) as one commit:
      ```
      docs: update PRD and task files for [PRD-NAME]
 
@@ -2908,6 +3896,65 @@ no work should be left dirty in the tree.
    ```
    If anything remains, commit it or report it to the user — do not leave
    the tree dirty.
+
+### Archive Completed Feature
+
+After the final commit, if **all** stories are `[x] Done` (no `[!] Blocked`
+stories the user parked, no `[ ] Todo` or `[~] In-Progress` remaining),
+archive the feature per the shared `work-lifecycle` include above
+(→ "Archive Trigger"). The feature-specific details:
+
+1. Verify every story in the task index is `[x] Done` and all DoD checks
+   pass. If any story is `[!] Blocked` (the user chose to defer it), do NOT
+   archive — the feature is not complete. Leave it in `todo/` and note the
+   deferred items in the PRD's "Deferred Items" section.
+2. Set `date.completed` in the PRD frontmatter to the current date.
+3. Derive the archive path from the feature filename's embedded timestamp:
+   ```bash
+   PRD_FILE="feat-YYYYMMDDHHmm-{slug}.md"   # e.g., feat-202607161200-project-prefs.md
+   YEAR="${PRD_FILE:5:4}"                     # 2026
+   MONTH="${PRD_FILE:9:2}"                    # 07
+   ARCHIVE_DIR="internal-docs/feature/archive/${YEAR}/${MONTH}"
+   mkdir -p "$ARCHIVE_DIR"
+   ```
+4. Move the feature directory from `todo/` to `archive/` using `git mv`:
+   ```bash
+   git mv "internal-docs/feature/todo/{slug}" "internal-docs/feature/archive/${YEAR}/${MONTH}/{slug}"
+   ```
+5. Commit the archive move:
+   ```bash
+   git commit -m "docs(feature): archive completed feature {slug}" \
+             -m "All stories verified [x] Done and DoD checks pass. Moved from todo/ to archive/${YEAR}/${MONTH}/." \
+             -m "#project-{PROJECT} #module-feature #type-docs #skill-execute-upsert-archived #skill-grm-created"
+   ```
+   Replace `{PROJECT}` with the target project's kebab-case name.
+
+This keeps `internal-docs/feature/todo/` clean — only active features show up
+there. Completed features are browsable by month under `archive/`.
+
+## Task List
+
+Each item is a checkbox the agent marks as it progresses. Mark `[~]` before
+starting, `[x]` when verified done, `[!]` if blocked.
+
+- [ ] Phase 1: self-update all skills to the latest version (skip if `SKIP_SELF_UPDATE=1`)
+- [ ] Phase 2: assess whether the request is large enough to warrant the full pipeline
+- [ ] Phase 3: detect the tech stack and produce the binding tech context block
+- [ ] Phase 4: locate or create the PRD (with Mermaid architecture and UX-flow diagrams)
+- [ ] Phase 5: locate or create task files from the PRD
+- [ ] Phase 6: execute stories via subagents with per-story code review, marking blocked stories
+- [ ] Phase 6: detect resume state — skip `[x] Done` stories, recover `[~]` In-Progress branches
+- [ ] Phase 6: run work verification subagent after doubt-driven review, before marking [x] Done
+- [ ] Phase 7: present the consolidated blocker report when no more runnable stories remain
+- [ ] Phase 7.5: final all-stories verification pass — re-verify every [x] Done story, check dependency paths
+- [ ] Phase 8: update the PRD, task files, and project documentation
+- [ ] Phase 8: archive completed feature (git mv todo/ → archive/YYYY/MM/) when all stories [x] Done
+
+**Mark legend:**
+- `[ ]` — task pending (not yet started)
+- `[~]` — task in progress (actively being worked)
+- `[x]` — task done (verified complete)
+- `[!]` — task blocked (cannot proceed; note the blocker inline)
 
 ## Definition of Done
 
@@ -2950,6 +3997,8 @@ the agent to check something the scripts cannot verify.
 - [ ] **[manual]** Each subagent dispatch received the tech context block as a binding constraint (Phase 6 Step 3)
 - [ ] **[manual]** A pre-task commit checkpoint was created before each subagent dispatch (Phase 6 Step 2)
 - [ ] **[manual]** A code review subagent was dispatched on each story commit with a structured verdict (CLEAN / NEEDS_FIXES / BLOCKED) (Phase 6 Step 4)
+- [ ] **[manual]** A work verification subagent was dispatched on each story after doubt-driven review, before marking [x] Done, with a structured verdict (VERIFIED / INCOMPLETE / NOT_STARTED) (Phase 6 — Work Verification Gate)
+- [ ] **[manual]** Every [x] Done story has a `## Verification` section in its story file recording the verdict, checker, and date (Phase 6 — Work Verification Gate)
 - [ ] **[manual]** Blocked stories are marked `[!] Blocked` with a `## Blocker` section containing question, options, recommendation, and why (Phase 6 — Blocked Story Convention)
 - [ ] **[manual]** Progress was emitted to the user after every subagent completion (Phase 6 Step 5)
 
@@ -2958,12 +4007,21 @@ the agent to check something the scripts cannot verify.
 - [ ] **[manual]** If any stories are `[!] Blocked`: a consolidated blocker report was presented in the conversation with question, options, recommendation, and why for each (Phase 7)
 - [ ] **[manual]** The report includes a summary of completed, blocked, and remaining Todo stories (Phase 7)
 
+### Phase 7.5: Final Verification
+
+- [ ] **[manual]** Every `[x] Done` story was re-verified against the current working tree state (not just its commit-time state) (Phase 7.5 Step 1)
+- [ ] **[manual]** Every `[x] Done` story has a `## Verification` section — stories without it were flagged as NOT_VERIFIED (Phase 7.5 Step 1)
+- [ ] **[script]** Dependency-path validation was run — no `[x] Done` story has a `[ ] Todo`, `[~] In-Progress`, or `[!] Blocked` story in its transitive dependency path (Phase 7.5 Step 2)
+- [ ] **[manual]** A final verification summary was emitted with counts of VERIFIED, INCOMPLETE, NOT_STARTED, and DEPENDENCY_VIOLATION stories (Phase 7.5 Step 4)
+
 ### Phase 8: Document
 
 - [ ] **[manual]** The PRD was updated to reflect what was actually built — status, deviations, deferred items (Phase 8)
 - [ ] **[manual]** The task index has no `[ ] Todo` or `[~] In-Progress` stories (unless user paused) — all are `[x] Done` or `[!] Blocked` with reasons (Phase 8)
 - [ ] **[manual]** Project documentation (README, API docs, architecture docs, AGENTS.md, CHANGELOG.md) was updated (Phase 8)
 - [ ] **[script]** `git status --porcelain` returns empty after the final commit — the tree is clean (Phase 8)
+- [ ] **[manual]** If all stories are `[x] Done`: the feature was archived via `git mv` from `todo/` to `archive/YYYY/MM/`, `date.completed` was set, and the archive commit was made (Phase 8 — Archive Completed Feature)
+- [ ] **[manual]** If any stories are `[!] Blocked` (deferred): the feature was left in `todo/` with deferred items noted in the PRD — NOT archived (Phase 8 — Archive Completed Feature)
 
 ### Disruption Handoff
 
@@ -2975,10 +4033,17 @@ If any of these are true, the run is NOT complete:
 
 - All stories are `[x] Done` but `git status --porcelain` is non-empty → uncommitted changes left in the tree (Phase 8)
 - A subagent completed but no code review was dispatched → the review step was skipped (Phase 6 Step 4)
+- A subagent completed but no work verification subagent was dispatched → the verification step was skipped (Phase 6 — Work Verification Gate)
+- A story is marked `[x] Done` but has no `## Verification` section → the per-story verification gate was skipped (Phase 6 — Work Verification Gate)
+- A story is marked `[x] Done` but its diff is empty → the work was never started (Phase 6 — Work Verification Gate, NOT_STARTED verdict)
+- A story is marked `[x] Done` but has a `[ ] Todo`, `[~] In-Progress`, or `[!] Blocked` story in its transitive dependency path → dependency-path violation (Phase 7.5 Step 2)
+- The final verification pass was not run → Phase 7.5 was skipped (Phase 7.5)
 - The tech context block was produced but not injected into subagent dispatches → subagents may have used the wrong tools (Phase 6 Step 3)
 - A story is `[!] Blocked` but the `## Blocker` section has no question/options/recommendation/why → the user cannot act on it (Phase 6)
 - The pipeline stopped with `[ ] Todo` stories remaining but no handoff was invoked → work state is lost (Disruption Handoff)
 - The PRD has no Architecture Diagram → the PRD template's diagram requirement was not met (Phase 4)
+- All stories are `[x] Done` but the feature is still in `todo/` → the archive step was skipped (Phase 8 — Archive Completed Feature)
+- The feature was archived to `archive/YYYY/MM/` but `date.completed` was not set in the PRD frontmatter → the lifecycle frontmatter is incomplete (Phase 8)
 
 
 ## Context Declaration
@@ -3289,17 +4354,30 @@ Date-embedded filenames and directory structures make documents:
 internal-docs/{type}/YYYY/MM/{type}-YYYYMMDDHHmm-{slug}.md
 ```
 
-For features, the pattern includes a feature-specific subdirectory:
+For features, the pattern uses a **two-stage lifecycle** (todo → archive) with
+a feature-specific subdirectory. The lifecycle protocol (archive trigger,
+frontmatter dates, `git mv` move, backfilling) is defined in the shared
+`work-lifecycle` include — see
+[`src/current/includes/work-lifecycle.md.tmpl`](../../current/includes/work-lifecycle.md.tmpl).
+The path shapes are:
 ```
-internal-docs/feature/YYYY/MM/{slug}/feat-YYYYMMDDHHmm-{slug}.md
+# Pending (active work):
+internal-docs/feature/todo/{slug}/feat-YYYYMMDDHHmm-{slug}.md
+
+# Archived (completed):
+internal-docs/feature/archive/YYYY/MM/{slug}/feat-YYYYMMDDHHmm-{slug}.md
 ```
+
+The `{slug}` directory name never changes between stages — only the parent
+directory changes. The archive's `YYYY/MM/` is derived from the feature's
+creation timestamp (the `feat-YYYYMMDDHHmm` prefix), not the completion date.
 
 ### Components
 
 - **{type}**: Document type directory
   - `adr` - Architecture Decision Records (accepted decisions)
   - `oos` - Out of Scope (rejected features/decisions)
-  - `feature` - Features (implemented functionality)
+  - `feature` - Features (implemented functionality, two-stage lifecycle)
 
 - **{YYYY}**: Year directory (4-digit year)
   - Example: `2025` for year 2025
@@ -3311,6 +4389,7 @@ internal-docs/feature/YYYY/MM/{slug}/feat-YYYYMMDDHHmm-{slug}.md
   - URL-friendly slug matching the feature name
   - Contains the feature document and related tasks
   - Example: `user-authentication`, `dark-mode-support`
+  - Lives under `todo/` while active, `archive/YYYY/MM/` when complete
 
 - **{type}-**: Document type prefix in filename
   - Matches the directory type
@@ -3345,11 +4424,13 @@ internal-docs/feature/YYYY/MM/{slug}/feat-YYYYMMDDHHmm-{slug}.md
 - **Status**: Rejected, Deferred, Out of Scope
 
 ### Feature Documents
-- **Location**: `internal-docs/feature/YYYY/MM/{slug}/`
+- **Location (pending)**: `internal-docs/feature/todo/{slug}/`
+- **Location (archived)**: `internal-docs/feature/archive/YYYY/MM/{slug}/`
 - **Prefix**: `feat`
 - **Purpose**: Document implemented features and functionality
 - **Status**: Draft, Planning, Ready, In Progress, Testing, Complete, Deprecated
 - **Structure**: Each feature has its own subdirectory containing the feature document and a `tasks/` subdirectory
+- **Lifecycle**: Follows the shared `work-lifecycle` protocol — see [`work-lifecycle.md.tmpl`](../../current/includes/work-lifecycle.md.tmpl). Features start in `todo/` (flat). When all stories are `[x] Done` and DoD passes, the `{slug}/` directory moves to `archive/YYYY/MM/` via `git mv`. Features with `[!] Blocked` or `[ ] Todo` stories remain in `todo/`. Frontmatter dates: `date.created`, `date.completed`, `date.last-activity`.
 
 ## Directory Structure
 
@@ -3371,17 +4452,23 @@ internal-docs/
 │           ├── oos-202506250915-dark-mode-support.md
 │           └── oos-202506251430-plugin-system.md
 └── feature/
-    └── 2025/
-        └── 06/
-            ├── user-authentication/
-            │   ├── feat-202506251630-user-authentication.md
-            │   └── tasks/
-            │       ├── tasks-user-authentication-01-001-user-tables.md
-            │       └── tasks-user-authentication-02-001-user-signup-api.md
-            └── api-rate-limiting/
-                ├── feat-202506251745-api-rate-limiting.md
-                └── tasks/
-                    └── tasks-api-rate-limiting-01-001-rate-limiter.md
+    ├── todo/                                    # active work (flat — easy to find)
+    │   ├── user-authentication/
+    │   │   ├── feat-202506251630-user-authentication.md
+    │   │   └── tasks/
+    │   │       ├── tasks-user-authentication-01-001-user-tables.md
+    │   │       └── tasks-user-authentication-02-001-user-signup-api.md
+    │   └── api-rate-limiting/
+    │       ├── feat-202506251745-api-rate-limiting.md
+    │       └── tasks/
+    │           └── tasks-api-rate-limiting-01-001-rate-limiter.md
+    └── archive/                                 # completed work (dated hierarchy)
+        └── 2025/
+            └── 06/
+                └── dark-mode-support/           # moved here via git mv when all stories [x] Done
+                    ├── feat-202506250915-dark-mode-support.md
+                    └── tasks/
+                        └── tasks-dark-mode-support-01-001-toggle.md
 ```
 
 ## Timestamp Management
@@ -3406,7 +4493,7 @@ Documents should reference related documents using their full paths:
 ```markdown
 See also: [ADR-20250131](../adr/2025/01/adr-202501311430-template-based-ai-workflow-sync.md)
 Related: [OOS-20250625](../oos/2025/06/oos-202506250915-dark-mode-support.md)
-Feature: [User Authentication](../feature/2025/06/feat-202506251630-user-authentication.md)
+Feature: [User Authentication](../feature/todo/user-authentication/feat-202506251630-user-authentication.md)
 ```
 
 ## Benefits Over Alternative Naming
@@ -3435,6 +4522,15 @@ Feature: [User Authentication](../feature/2025/06/feat-202506251630-user-authent
 3. **Create directories as needed** - Year/month directories are created on-demand
 4. **Reference related documents** - Link to related ADRs, features, or out-of-scope items
 5. **Consistent timezone** - Use the same timezone for all timestamps
+
+### Backfilling Pre-Existing Features
+
+Features created before the two-stage lifecycle was adopted may still live at
+the legacy `internal-docs/feature/YYYY/MM/{slug}/` path. The backfill protocol
+(completed → `archive/`, in-progress → `todo/`) is defined in the shared
+`work-lifecycle` include — see
+[`work-lifecycle.md.tmpl`](../../current/includes/work-lifecycle.md.tmpl)
+→ "Backfilling Pre-Existing Documents".
 
 ## Template Integration
 
@@ -3498,7 +4594,7 @@ Three properties make the PRD executable by a weaker model:
    - After the user answers, synthesize the responses into a full PRD.
    - Use a short descriptive slug for the name of the PRD file.
    - Use the date-embedded naming convention: `feat-YYYYMMDDHHmm-{slug}.md`
-   - Put the PRD in `internal-docs/feature/YYYY/MM/{slug}/` directory, creating year/month/slug directories as needed.
+   - Put the PRD in `internal-docs/feature/todo/{slug}/` directory, creating todo/slug directories as needed.
    - **MUST** follow the structure and sections defined in the template below.
    - Use explicit, concrete language. Avoid jargon where possible.
    - Assume the primary reader is a **junior developer**.
@@ -3528,7 +4624,7 @@ Three properties make the PRD executable by a weaker model:
 
 5. **Save the PRD**
    - File format: Markdown (`.md`).
-   - Location: `internal-docs/feature/YYYY/MM/{slug}/`.
+   - Location: `internal-docs/feature/todo/{slug}/`.
    - Filename pattern: `feat-YYYYMMDDHHmm-{slug}.md` (see naming convention).
 
 6. **Wait for Feedback**
@@ -3849,17 +4945,30 @@ Date-embedded filenames and directory structures make documents:
 internal-docs/{type}/YYYY/MM/{type}-YYYYMMDDHHmm-{slug}.md
 ```
 
-For features, the pattern includes a feature-specific subdirectory:
+For features, the pattern uses a **two-stage lifecycle** (todo → archive) with
+a feature-specific subdirectory. The lifecycle protocol (archive trigger,
+frontmatter dates, `git mv` move, backfilling) is defined in the shared
+`work-lifecycle` include — see
+[`src/current/includes/work-lifecycle.md.tmpl`](../../current/includes/work-lifecycle.md.tmpl).
+The path shapes are:
 ```
-internal-docs/feature/YYYY/MM/{slug}/feat-YYYYMMDDHHmm-{slug}.md
+# Pending (active work):
+internal-docs/feature/todo/{slug}/feat-YYYYMMDDHHmm-{slug}.md
+
+# Archived (completed):
+internal-docs/feature/archive/YYYY/MM/{slug}/feat-YYYYMMDDHHmm-{slug}.md
 ```
+
+The `{slug}` directory name never changes between stages — only the parent
+directory changes. The archive's `YYYY/MM/` is derived from the feature's
+creation timestamp (the `feat-YYYYMMDDHHmm` prefix), not the completion date.
 
 ### Components
 
 - **{type}**: Document type directory
   - `adr` - Architecture Decision Records (accepted decisions)
   - `oos` - Out of Scope (rejected features/decisions)
-  - `feature` - Features (implemented functionality)
+  - `feature` - Features (implemented functionality, two-stage lifecycle)
 
 - **{YYYY}**: Year directory (4-digit year)
   - Example: `2025` for year 2025
@@ -3871,6 +4980,7 @@ internal-docs/feature/YYYY/MM/{slug}/feat-YYYYMMDDHHmm-{slug}.md
   - URL-friendly slug matching the feature name
   - Contains the feature document and related tasks
   - Example: `user-authentication`, `dark-mode-support`
+  - Lives under `todo/` while active, `archive/YYYY/MM/` when complete
 
 - **{type}-**: Document type prefix in filename
   - Matches the directory type
@@ -3905,11 +5015,13 @@ internal-docs/feature/YYYY/MM/{slug}/feat-YYYYMMDDHHmm-{slug}.md
 - **Status**: Rejected, Deferred, Out of Scope
 
 ### Feature Documents
-- **Location**: `internal-docs/feature/YYYY/MM/{slug}/`
+- **Location (pending)**: `internal-docs/feature/todo/{slug}/`
+- **Location (archived)**: `internal-docs/feature/archive/YYYY/MM/{slug}/`
 - **Prefix**: `feat`
 - **Purpose**: Document implemented features and functionality
 - **Status**: Draft, Planning, Ready, In Progress, Testing, Complete, Deprecated
 - **Structure**: Each feature has its own subdirectory containing the feature document and a `tasks/` subdirectory
+- **Lifecycle**: Follows the shared `work-lifecycle` protocol — see [`work-lifecycle.md.tmpl`](../../current/includes/work-lifecycle.md.tmpl). Features start in `todo/` (flat). When all stories are `[x] Done` and DoD passes, the `{slug}/` directory moves to `archive/YYYY/MM/` via `git mv`. Features with `[!] Blocked` or `[ ] Todo` stories remain in `todo/`. Frontmatter dates: `date.created`, `date.completed`, `date.last-activity`.
 
 ## Directory Structure
 
@@ -3931,17 +5043,23 @@ internal-docs/
 │           ├── oos-202506250915-dark-mode-support.md
 │           └── oos-202506251430-plugin-system.md
 └── feature/
-    └── 2025/
-        └── 06/
-            ├── user-authentication/
-            │   ├── feat-202506251630-user-authentication.md
-            │   └── tasks/
-            │       ├── tasks-user-authentication-01-001-user-tables.md
-            │       └── tasks-user-authentication-02-001-user-signup-api.md
-            └── api-rate-limiting/
-                ├── feat-202506251745-api-rate-limiting.md
-                └── tasks/
-                    └── tasks-api-rate-limiting-01-001-rate-limiter.md
+    ├── todo/                                    # active work (flat — easy to find)
+    │   ├── user-authentication/
+    │   │   ├── feat-202506251630-user-authentication.md
+    │   │   └── tasks/
+    │   │       ├── tasks-user-authentication-01-001-user-tables.md
+    │   │       └── tasks-user-authentication-02-001-user-signup-api.md
+    │   └── api-rate-limiting/
+    │       ├── feat-202506251745-api-rate-limiting.md
+    │       └── tasks/
+    │           └── tasks-api-rate-limiting-01-001-rate-limiter.md
+    └── archive/                                 # completed work (dated hierarchy)
+        └── 2025/
+            └── 06/
+                └── dark-mode-support/           # moved here via git mv when all stories [x] Done
+                    ├── feat-202506250915-dark-mode-support.md
+                    └── tasks/
+                        └── tasks-dark-mode-support-01-001-toggle.md
 ```
 
 ## Timestamp Management
@@ -3966,7 +5084,7 @@ Documents should reference related documents using their full paths:
 ```markdown
 See also: [ADR-20250131](../adr/2025/01/adr-202501311430-template-based-ai-workflow-sync.md)
 Related: [OOS-20250625](../oos/2025/06/oos-202506250915-dark-mode-support.md)
-Feature: [User Authentication](../feature/2025/06/feat-202506251630-user-authentication.md)
+Feature: [User Authentication](../feature/todo/user-authentication/feat-202506251630-user-authentication.md)
 ```
 
 ## Benefits Over Alternative Naming
@@ -3996,6 +5114,15 @@ Feature: [User Authentication](../feature/2025/06/feat-202506251630-user-authent
 4. **Reference related documents** - Link to related ADRs, features, or out-of-scope items
 5. **Consistent timezone** - Use the same timezone for all timestamps
 
+### Backfilling Pre-Existing Features
+
+Features created before the two-stage lifecycle was adopted may still live at
+the legacy `internal-docs/feature/YYYY/MM/{slug}/` path. The backfill protocol
+(completed → `archive/`, in-progress → `todo/`) is defined in the shared
+`work-lifecycle` include — see
+[`work-lifecycle.md.tmpl`](../../current/includes/work-lifecycle.md.tmpl)
+→ "Backfilling Pre-Existing Documents".
+
 ## Template Integration
 
 This naming convention should be referenced in:
@@ -4024,7 +5151,7 @@ Three properties make each story executable by a weaker model:
 ## Output
 
 - **Format:** Markdown (`.md`)
-- **Location (both outputs):** `internal-docs/feature/YYYY/MM/{slug}/tasks/`
+- **Location (both outputs):** `internal-docs/feature/todo/{slug}/tasks/`
 - **Story files (one per story):** Filename `tasks-[PRD-NAME-KEBAB-CASE]-[2-DIGIT-STORY-PARALLEL-PHASE]-[3-DIGIT-STORY-PARALLEL-ID]-[STORY-NAME-KEBAB-CASE].md` (e.g., `tasks-prd-user-handling-01-001-user-tables.md`, `tasks-prd-user-handling-02-001-user-signup-api.md`, `tasks-prd-user-handling-02-002-user-signup-mock-service.md`). See "Per-Story File Template (with YAML front matter)" for required metadata and body structure.
 - **Index file (summary of all stories):** Filename `index-[PRD-NAME-KEBAB-CASE].md`. The content MUST follow the table structure shown in `### Example Structure` — a single Markdown table with columns: Story ID, Title, Phase, Status, Assignee, Parallel-safe, Dependencies, Dependants, Modules, Branch. The **Status** column is mandatory from creation and every story MUST be initialized as `[ ] Todo`. Downstream consumers (`tasks-processor.md` workflow, `execute-upsert` skill) read this column to select the next runnable story and fail with "table has no Status column yet" if it is missing.
 
@@ -4055,17 +5182,30 @@ Date-embedded filenames and directory structures make documents:
 internal-docs/{type}/YYYY/MM/{type}-YYYYMMDDHHmm-{slug}.md
 ```
 
-For features, the pattern includes a feature-specific subdirectory:
+For features, the pattern uses a **two-stage lifecycle** (todo → archive) with
+a feature-specific subdirectory. The lifecycle protocol (archive trigger,
+frontmatter dates, `git mv` move, backfilling) is defined in the shared
+`work-lifecycle` include — see
+[`src/current/includes/work-lifecycle.md.tmpl`](../../current/includes/work-lifecycle.md.tmpl).
+The path shapes are:
 ```
-internal-docs/feature/YYYY/MM/{slug}/feat-YYYYMMDDHHmm-{slug}.md
+# Pending (active work):
+internal-docs/feature/todo/{slug}/feat-YYYYMMDDHHmm-{slug}.md
+
+# Archived (completed):
+internal-docs/feature/archive/YYYY/MM/{slug}/feat-YYYYMMDDHHmm-{slug}.md
 ```
+
+The `{slug}` directory name never changes between stages — only the parent
+directory changes. The archive's `YYYY/MM/` is derived from the feature's
+creation timestamp (the `feat-YYYYMMDDHHmm` prefix), not the completion date.
 
 ### Components
 
 - **{type}**: Document type directory
   - `adr` - Architecture Decision Records (accepted decisions)
   - `oos` - Out of Scope (rejected features/decisions)
-  - `feature` - Features (implemented functionality)
+  - `feature` - Features (implemented functionality, two-stage lifecycle)
 
 - **{YYYY}**: Year directory (4-digit year)
   - Example: `2025` for year 2025
@@ -4077,6 +5217,7 @@ internal-docs/feature/YYYY/MM/{slug}/feat-YYYYMMDDHHmm-{slug}.md
   - URL-friendly slug matching the feature name
   - Contains the feature document and related tasks
   - Example: `user-authentication`, `dark-mode-support`
+  - Lives under `todo/` while active, `archive/YYYY/MM/` when complete
 
 - **{type}-**: Document type prefix in filename
   - Matches the directory type
@@ -4111,11 +5252,13 @@ internal-docs/feature/YYYY/MM/{slug}/feat-YYYYMMDDHHmm-{slug}.md
 - **Status**: Rejected, Deferred, Out of Scope
 
 ### Feature Documents
-- **Location**: `internal-docs/feature/YYYY/MM/{slug}/`
+- **Location (pending)**: `internal-docs/feature/todo/{slug}/`
+- **Location (archived)**: `internal-docs/feature/archive/YYYY/MM/{slug}/`
 - **Prefix**: `feat`
 - **Purpose**: Document implemented features and functionality
 - **Status**: Draft, Planning, Ready, In Progress, Testing, Complete, Deprecated
 - **Structure**: Each feature has its own subdirectory containing the feature document and a `tasks/` subdirectory
+- **Lifecycle**: Follows the shared `work-lifecycle` protocol — see [`work-lifecycle.md.tmpl`](../../current/includes/work-lifecycle.md.tmpl). Features start in `todo/` (flat). When all stories are `[x] Done` and DoD passes, the `{slug}/` directory moves to `archive/YYYY/MM/` via `git mv`. Features with `[!] Blocked` or `[ ] Todo` stories remain in `todo/`. Frontmatter dates: `date.created`, `date.completed`, `date.last-activity`.
 
 ## Directory Structure
 
@@ -4137,17 +5280,23 @@ internal-docs/
 │           ├── oos-202506250915-dark-mode-support.md
 │           └── oos-202506251430-plugin-system.md
 └── feature/
-    └── 2025/
-        └── 06/
-            ├── user-authentication/
-            │   ├── feat-202506251630-user-authentication.md
-            │   └── tasks/
-            │       ├── tasks-user-authentication-01-001-user-tables.md
-            │       └── tasks-user-authentication-02-001-user-signup-api.md
-            └── api-rate-limiting/
-                ├── feat-202506251745-api-rate-limiting.md
-                └── tasks/
-                    └── tasks-api-rate-limiting-01-001-rate-limiter.md
+    ├── todo/                                    # active work (flat — easy to find)
+    │   ├── user-authentication/
+    │   │   ├── feat-202506251630-user-authentication.md
+    │   │   └── tasks/
+    │   │       ├── tasks-user-authentication-01-001-user-tables.md
+    │   │       └── tasks-user-authentication-02-001-user-signup-api.md
+    │   └── api-rate-limiting/
+    │       ├── feat-202506251745-api-rate-limiting.md
+    │       └── tasks/
+    │           └── tasks-api-rate-limiting-01-001-rate-limiter.md
+    └── archive/                                 # completed work (dated hierarchy)
+        └── 2025/
+            └── 06/
+                └── dark-mode-support/           # moved here via git mv when all stories [x] Done
+                    ├── feat-202506250915-dark-mode-support.md
+                    └── tasks/
+                        └── tasks-dark-mode-support-01-001-toggle.md
 ```
 
 ## Timestamp Management
@@ -4172,7 +5321,7 @@ Documents should reference related documents using their full paths:
 ```markdown
 See also: [ADR-20250131](../adr/2025/01/adr-202501311430-template-based-ai-workflow-sync.md)
 Related: [OOS-20250625](../oos/2025/06/oos-202506250915-dark-mode-support.md)
-Feature: [User Authentication](../feature/2025/06/feat-202506251630-user-authentication.md)
+Feature: [User Authentication](../feature/todo/user-authentication/feat-202506251630-user-authentication.md)
 ```
 
 ## Benefits Over Alternative Naming
@@ -4201,6 +5350,15 @@ Feature: [User Authentication](../feature/2025/06/feat-202506251630-user-authent
 3. **Create directories as needed** - Year/month directories are created on-demand
 4. **Reference related documents** - Link to related ADRs, features, or out-of-scope items
 5. **Consistent timezone** - Use the same timezone for all timestamps
+
+### Backfilling Pre-Existing Features
+
+Features created before the two-stage lifecycle was adopted may still live at
+the legacy `internal-docs/feature/YYYY/MM/{slug}/` path. The backfill protocol
+(completed → `archive/`, in-progress → `todo/`) is defined in the shared
+`work-lifecycle` include — see
+[`work-lifecycle.md.tmpl`](../../current/includes/work-lifecycle.md.tmpl)
+→ "Backfilling Pre-Existing Documents".
 
 ## Template Integration
 
@@ -4260,7 +5418,7 @@ Stories should contain sections for:
 
 ## Output Conventions
 
-- Place generated story files under `internal-docs/feature/YYYY/MM/{slug}/tasks/`.
+- Place generated story files under `internal-docs/feature/todo/{slug}/tasks/`.
 - Filename pattern: `tasks-[PRD-NAME-KEBAB-CASE]-[PP]-[III]-[STORY-NAME-KEBAB-CASE].md`.
 - Create a phase-index file `index-[PRD-NAME-KEBAB-CASE].md` summarizing all stories in a table with: Story ID, Title, Branch, Dependencies, Parallel-safe, Modules.
 
@@ -4293,7 +5451,7 @@ Before moving from high-level stories to detailed sub-tasks:
 7. **Phase 2: Generate Sub-Tasks:** Once confirmed, for each story create smaller, actionable sub-tasks. Ensure sub-tasks logically follow from dependencies and minimize merge conflicts by scoping changes. Each sub-task MUST include verification commands with expected results.
 8. **Identify Relevant Files:** Based on the tasks and PRD, identify potential files that will need to be created or modified. List these under the `Relevant Files` section, including corresponding test files if applicable.
 9. **Generate Final Output:** Combine the parent tasks, sub-tasks, relevant files, notes, and derived context into the final Markdown structure.
-10. **Save Task List:** Save each story document to `internal-docs/feature/YYYY/MM/{slug}/tasks/` using the filename `tasks-[PRD-NAME-KEBAB-CASE]-[2-DIGIT-STORY-PHASE]-[3-DIGIT-STORY-PARALLEL-ID]-[STORY-NAME-KEBAB-CASE].md`.
+10. **Save Task List:** Save each story document to `internal-docs/feature/todo/{slug}/tasks/` using the filename `tasks-[PRD-NAME-KEBAB-CASE]-[2-DIGIT-STORY-PHASE]-[3-DIGIT-STORY-PARALLEL-ID]-[STORY-NAME-KEBAB-CASE].md`.
 
 ## Numbering Scheme and Branch Naming
 
@@ -4368,7 +5526,7 @@ The generated task list _must_ follow this structure:
 
 ## Per-Story File Template (with YAML front matter)
 
-Each story file must begin with YAML front matter followed by a structured body. Save files to `internal-docs/feature/YYYY/MM/tasks/` as `tasks-[PRD-NAME-KEBAB-CASE]-[PP]-[III]-[STORY-TITLE-KEBAB-CASE].md`.
+Each story file must begin with YAML front matter followed by a structured body. Save files to `internal-docs/feature/todo/{slug}/tasks/` as `tasks-[PRD-NAME-KEBAB-CASE]-[PP]-[III]-[STORY-TITLE-KEBAB-CASE].md`.
 
 ```yaml
 ---
@@ -4376,7 +5534,7 @@ story_id: "PP-III"            # e.g., "01-001"
 story_title: "<story title>"
 story_name: "<STORY-NAME-KEBAB-CASE>"
 prd_name: "<PRD-NAME-KEBAB-CASE>"  # e.g., user-handling
-prd_file: "internal-docs/feature/YYYY/MM/{slug}/feat-YYYYMMDDHHmm-{slug}.md"
+prd_file: "internal-docs/feature/todo/{slug}/feat-YYYYMMDDHHmm-{slug}.md"
 phase: 1                      # 2-digit sequential phase as integer
 parallel_id: 1                # 3-digit parallel index as integer
 branch: "feature/current/<PRD-NAME-KEBAB-CASE>/story-PP-III-<STORY-NAME-KEBAB-CASE>"
@@ -4547,17 +5705,30 @@ Date-embedded filenames and directory structures make documents:
 internal-docs/{type}/YYYY/MM/{type}-YYYYMMDDHHmm-{slug}.md
 ```
 
-For features, the pattern includes a feature-specific subdirectory:
+For features, the pattern uses a **two-stage lifecycle** (todo → archive) with
+a feature-specific subdirectory. The lifecycle protocol (archive trigger,
+frontmatter dates, `git mv` move, backfilling) is defined in the shared
+`work-lifecycle` include — see
+[`src/current/includes/work-lifecycle.md.tmpl`](../../current/includes/work-lifecycle.md.tmpl).
+The path shapes are:
 ```
-internal-docs/feature/YYYY/MM/{slug}/feat-YYYYMMDDHHmm-{slug}.md
+# Pending (active work):
+internal-docs/feature/todo/{slug}/feat-YYYYMMDDHHmm-{slug}.md
+
+# Archived (completed):
+internal-docs/feature/archive/YYYY/MM/{slug}/feat-YYYYMMDDHHmm-{slug}.md
 ```
+
+The `{slug}` directory name never changes between stages — only the parent
+directory changes. The archive's `YYYY/MM/` is derived from the feature's
+creation timestamp (the `feat-YYYYMMDDHHmm` prefix), not the completion date.
 
 ### Components
 
 - **{type}**: Document type directory
   - `adr` - Architecture Decision Records (accepted decisions)
   - `oos` - Out of Scope (rejected features/decisions)
-  - `feature` - Features (implemented functionality)
+  - `feature` - Features (implemented functionality, two-stage lifecycle)
 
 - **{YYYY}**: Year directory (4-digit year)
   - Example: `2025` for year 2025
@@ -4569,6 +5740,7 @@ internal-docs/feature/YYYY/MM/{slug}/feat-YYYYMMDDHHmm-{slug}.md
   - URL-friendly slug matching the feature name
   - Contains the feature document and related tasks
   - Example: `user-authentication`, `dark-mode-support`
+  - Lives under `todo/` while active, `archive/YYYY/MM/` when complete
 
 - **{type}-**: Document type prefix in filename
   - Matches the directory type
@@ -4603,11 +5775,13 @@ internal-docs/feature/YYYY/MM/{slug}/feat-YYYYMMDDHHmm-{slug}.md
 - **Status**: Rejected, Deferred, Out of Scope
 
 ### Feature Documents
-- **Location**: `internal-docs/feature/YYYY/MM/{slug}/`
+- **Location (pending)**: `internal-docs/feature/todo/{slug}/`
+- **Location (archived)**: `internal-docs/feature/archive/YYYY/MM/{slug}/`
 - **Prefix**: `feat`
 - **Purpose**: Document implemented features and functionality
 - **Status**: Draft, Planning, Ready, In Progress, Testing, Complete, Deprecated
 - **Structure**: Each feature has its own subdirectory containing the feature document and a `tasks/` subdirectory
+- **Lifecycle**: Follows the shared `work-lifecycle` protocol — see [`work-lifecycle.md.tmpl`](../../current/includes/work-lifecycle.md.tmpl). Features start in `todo/` (flat). When all stories are `[x] Done` and DoD passes, the `{slug}/` directory moves to `archive/YYYY/MM/` via `git mv`. Features with `[!] Blocked` or `[ ] Todo` stories remain in `todo/`. Frontmatter dates: `date.created`, `date.completed`, `date.last-activity`.
 
 ## Directory Structure
 
@@ -4629,17 +5803,23 @@ internal-docs/
 │           ├── oos-202506250915-dark-mode-support.md
 │           └── oos-202506251430-plugin-system.md
 └── feature/
-    └── 2025/
-        └── 06/
-            ├── user-authentication/
-            │   ├── feat-202506251630-user-authentication.md
-            │   └── tasks/
-            │       ├── tasks-user-authentication-01-001-user-tables.md
-            │       └── tasks-user-authentication-02-001-user-signup-api.md
-            └── api-rate-limiting/
-                ├── feat-202506251745-api-rate-limiting.md
-                └── tasks/
-                    └── tasks-api-rate-limiting-01-001-rate-limiter.md
+    ├── todo/                                    # active work (flat — easy to find)
+    │   ├── user-authentication/
+    │   │   ├── feat-202506251630-user-authentication.md
+    │   │   └── tasks/
+    │   │       ├── tasks-user-authentication-01-001-user-tables.md
+    │   │       └── tasks-user-authentication-02-001-user-signup-api.md
+    │   └── api-rate-limiting/
+    │       ├── feat-202506251745-api-rate-limiting.md
+    │       └── tasks/
+    │           └── tasks-api-rate-limiting-01-001-rate-limiter.md
+    └── archive/                                 # completed work (dated hierarchy)
+        └── 2025/
+            └── 06/
+                └── dark-mode-support/           # moved here via git mv when all stories [x] Done
+                    ├── feat-202506250915-dark-mode-support.md
+                    └── tasks/
+                        └── tasks-dark-mode-support-01-001-toggle.md
 ```
 
 ## Timestamp Management
@@ -4664,7 +5844,7 @@ Documents should reference related documents using their full paths:
 ```markdown
 See also: [ADR-20250131](../adr/2025/01/adr-202501311430-template-based-ai-workflow-sync.md)
 Related: [OOS-20250625](../oos/2025/06/oos-202506250915-dark-mode-support.md)
-Feature: [User Authentication](../feature/2025/06/feat-202506251630-user-authentication.md)
+Feature: [User Authentication](../feature/todo/user-authentication/feat-202506251630-user-authentication.md)
 ```
 
 ## Benefits Over Alternative Naming
@@ -4693,6 +5873,15 @@ Feature: [User Authentication](../feature/2025/06/feat-202506251630-user-authent
 3. **Create directories as needed** - Year/month directories are created on-demand
 4. **Reference related documents** - Link to related ADRs, features, or out-of-scope items
 5. **Consistent timezone** - Use the same timezone for all timestamps
+
+### Backfilling Pre-Existing Features
+
+Features created before the two-stage lifecycle was adopted may still live at
+the legacy `internal-docs/feature/YYYY/MM/{slug}/` path. The backfill protocol
+(completed → `archive/`, in-progress → `todo/`) is defined in the shared
+`work-lifecycle` include — see
+[`work-lifecycle.md.tmpl`](../../current/includes/work-lifecycle.md.tmpl)
+→ "Backfilling Pre-Existing Documents".
 
 ## Template Integration
 
@@ -4810,7 +5999,7 @@ Initialize and maintain artifacts for stories already defined by `tasks-from-prd
 
 ### 1) PRD Dashboard (Markdown table)
 
-- **Location:** `internal-docs/feature/YYYY/MM/{slug}/tasks/`
+- **Location:** `internal-docs/feature/todo/{slug}/tasks/`
 - **Filename:** `index-[PRD-NAME-KEBAB-CASE].md`
 - **Purpose:** Central status hub for all stories, optimized for parallel execution tracking.
 
@@ -4861,17 +6050,30 @@ Date-embedded filenames and directory structures make documents:
 internal-docs/{type}/YYYY/MM/{type}-YYYYMMDDHHmm-{slug}.md
 ```
 
-For features, the pattern includes a feature-specific subdirectory:
+For features, the pattern uses a **two-stage lifecycle** (todo → archive) with
+a feature-specific subdirectory. The lifecycle protocol (archive trigger,
+frontmatter dates, `git mv` move, backfilling) is defined in the shared
+`work-lifecycle` include — see
+[`src/current/includes/work-lifecycle.md.tmpl`](../../current/includes/work-lifecycle.md.tmpl).
+The path shapes are:
 ```
-internal-docs/feature/YYYY/MM/{slug}/feat-YYYYMMDDHHmm-{slug}.md
+# Pending (active work):
+internal-docs/feature/todo/{slug}/feat-YYYYMMDDHHmm-{slug}.md
+
+# Archived (completed):
+internal-docs/feature/archive/YYYY/MM/{slug}/feat-YYYYMMDDHHmm-{slug}.md
 ```
+
+The `{slug}` directory name never changes between stages — only the parent
+directory changes. The archive's `YYYY/MM/` is derived from the feature's
+creation timestamp (the `feat-YYYYMMDDHHmm` prefix), not the completion date.
 
 ### Components
 
 - **{type}**: Document type directory
   - `adr` - Architecture Decision Records (accepted decisions)
   - `oos` - Out of Scope (rejected features/decisions)
-  - `feature` - Features (implemented functionality)
+  - `feature` - Features (implemented functionality, two-stage lifecycle)
 
 - **{YYYY}**: Year directory (4-digit year)
   - Example: `2025` for year 2025
@@ -4883,6 +6085,7 @@ internal-docs/feature/YYYY/MM/{slug}/feat-YYYYMMDDHHmm-{slug}.md
   - URL-friendly slug matching the feature name
   - Contains the feature document and related tasks
   - Example: `user-authentication`, `dark-mode-support`
+  - Lives under `todo/` while active, `archive/YYYY/MM/` when complete
 
 - **{type}-**: Document type prefix in filename
   - Matches the directory type
@@ -4917,11 +6120,13 @@ internal-docs/feature/YYYY/MM/{slug}/feat-YYYYMMDDHHmm-{slug}.md
 - **Status**: Rejected, Deferred, Out of Scope
 
 ### Feature Documents
-- **Location**: `internal-docs/feature/YYYY/MM/{slug}/`
+- **Location (pending)**: `internal-docs/feature/todo/{slug}/`
+- **Location (archived)**: `internal-docs/feature/archive/YYYY/MM/{slug}/`
 - **Prefix**: `feat`
 - **Purpose**: Document implemented features and functionality
 - **Status**: Draft, Planning, Ready, In Progress, Testing, Complete, Deprecated
 - **Structure**: Each feature has its own subdirectory containing the feature document and a `tasks/` subdirectory
+- **Lifecycle**: Follows the shared `work-lifecycle` protocol — see [`work-lifecycle.md.tmpl`](../../current/includes/work-lifecycle.md.tmpl). Features start in `todo/` (flat). When all stories are `[x] Done` and DoD passes, the `{slug}/` directory moves to `archive/YYYY/MM/` via `git mv`. Features with `[!] Blocked` or `[ ] Todo` stories remain in `todo/`. Frontmatter dates: `date.created`, `date.completed`, `date.last-activity`.
 
 ## Directory Structure
 
@@ -4943,17 +6148,23 @@ internal-docs/
 │           ├── oos-202506250915-dark-mode-support.md
 │           └── oos-202506251430-plugin-system.md
 └── feature/
-    └── 2025/
-        └── 06/
-            ├── user-authentication/
-            │   ├── feat-202506251630-user-authentication.md
-            │   └── tasks/
-            │       ├── tasks-user-authentication-01-001-user-tables.md
-            │       └── tasks-user-authentication-02-001-user-signup-api.md
-            └── api-rate-limiting/
-                ├── feat-202506251745-api-rate-limiting.md
-                └── tasks/
-                    └── tasks-api-rate-limiting-01-001-rate-limiter.md
+    ├── todo/                                    # active work (flat — easy to find)
+    │   ├── user-authentication/
+    │   │   ├── feat-202506251630-user-authentication.md
+    │   │   └── tasks/
+    │   │       ├── tasks-user-authentication-01-001-user-tables.md
+    │   │       └── tasks-user-authentication-02-001-user-signup-api.md
+    │   └── api-rate-limiting/
+    │       ├── feat-202506251745-api-rate-limiting.md
+    │       └── tasks/
+    │           └── tasks-api-rate-limiting-01-001-rate-limiter.md
+    └── archive/                                 # completed work (dated hierarchy)
+        └── 2025/
+            └── 06/
+                └── dark-mode-support/           # moved here via git mv when all stories [x] Done
+                    ├── feat-202506250915-dark-mode-support.md
+                    └── tasks/
+                        └── tasks-dark-mode-support-01-001-toggle.md
 ```
 
 ## Timestamp Management
@@ -4978,7 +6189,7 @@ Documents should reference related documents using their full paths:
 ```markdown
 See also: [ADR-20250131](../adr/2025/01/adr-202501311430-template-based-ai-workflow-sync.md)
 Related: [OOS-20250625](../oos/2025/06/oos-202506250915-dark-mode-support.md)
-Feature: [User Authentication](../feature/2025/06/feat-202506251630-user-authentication.md)
+Feature: [User Authentication](../feature/todo/user-authentication/feat-202506251630-user-authentication.md)
 ```
 
 ## Benefits Over Alternative Naming
@@ -5007,6 +6218,15 @@ Feature: [User Authentication](../feature/2025/06/feat-202506251630-user-authent
 3. **Create directories as needed** - Year/month directories are created on-demand
 4. **Reference related documents** - Link to related ADRs, features, or out-of-scope items
 5. **Consistent timezone** - Use the same timezone for all timestamps
+
+### Backfilling Pre-Existing Features
+
+Features created before the two-stage lifecycle was adopted may still live at
+the legacy `internal-docs/feature/YYYY/MM/{slug}/` path. The backfill protocol
+(completed → `archive/`, in-progress → `todo/`) is defined in the shared
+`work-lifecycle` include — see
+[`work-lifecycle.md.tmpl`](../../current/includes/work-lifecycle.md.tmpl)
+→ "Backfilling Pre-Existing Documents".
 
 ## Template Integration
 
@@ -5066,7 +6286,7 @@ Stories should contain sections for:
 
 ## Output Conventions
 
-- Place generated story files under `internal-docs/feature/YYYY/MM/{slug}/tasks/`.
+- Place generated story files under `internal-docs/feature/todo/{slug}/tasks/`.
 - Filename pattern: `tasks-[PRD-NAME-KEBAB-CASE]-[PP]-[III]-[STORY-NAME-KEBAB-CASE].md`.
 - Create a phase-index file `index-[PRD-NAME-KEBAB-CASE].md` summarizing all stories in a table with: Story ID, Title, Branch, Dependencies, Parallel-safe, Modules.
 
@@ -5090,7 +6310,7 @@ Before moving from high-level stories to detailed sub-tasks:
 
 ### 2) Per-Story File Template
 
-- **Location:** `internal-docs/feature/YYYY/MM/{slug}/tasks/`
+- **Location:** `internal-docs/feature/todo/{slug}/tasks/`
 - **Filename:** `tasks-[PRD-NAME-KEBAB-CASE]-[PP]-[III]-[STORY-NAME-KEBAB-CASE].md`
 
 Use the following structure for each story file (YAML front matter + markdown sections):
@@ -5101,7 +6321,7 @@ story_id: "PP-III"            # e.g., "01-001"
 story_title: "<story title>"
 story_name: "<STORY-NAME-KEBAB-CASE>"
 prd_name: "<PRD-NAME-KEBAB-CASE>"  # e.g., user-handling
-prd_file: "internal-docs/feature/YYYY/MM/{slug}/feat-YYYYMMDDHHmm-{slug}.md"
+prd_file: "internal-docs/feature/todo/{slug}/feat-YYYYMMDDHHmm-{slug}.md"
 phase: 1                      # 2-digit sequential phase as integer
 parallel_id: 1                # 3-digit parallel index as integer
 branch: "feature/current/<PRD-NAME-KEBAB-CASE>/story-PP-III-<STORY-NAME-KEBAB-CASE>"
@@ -5158,9 +6378,10 @@ When working with task lists, the AI must:
 - **Project-detection skill (bundled)**: `references/included/skills/software-dev/project-detection/` — materialized at build time via `references/included/skills/software-dev/project-detection/`. Used in Phase 3 to detect the project's tech stack
 - **Code-review-guidance skill (bundled)**: `references/included/skills/software-dev/code-review-guidance/` — materialized at build time via `references/included/skills/software-dev/code-review-guidance/`. Used in Phase 6 for per-story code review
 - **Diagram-upsert skill (bundled)**: `references/included/skills/content/diagram-upsert/` — materialized at build time via `references/included/skills/content/diagram-upsert/`. Used in Phase 4 (PRD) to produce Mermaid architecture and UX-flow diagrams that the PRD template requires
-- **Tech context output**: `internal-docs/feature/YYYY/MM/{slug}/tech-context.txt` (or PRD frontmatter)
-- **PRD output**: `internal-docs/feature/YYYY/MM/{slug}/feat-YYYYMMDDHHmm-{slug}.md`
-- **Task output**: `internal-docs/feature/YYYY/MM/{slug}/tasks/`
+- **Tech context output**: `internal-docs/feature/todo/{slug}/tech-context.txt` (or PRD frontmatter)
+- **PRD output**: `internal-docs/feature/todo/{slug}/feat-YYYYMMDDHHmm-{slug}.md`
+- **Task output**: `internal-docs/feature/todo/{slug}/tasks/`
+- **Feature archive**: `internal-docs/feature/archive/YYYY/MM/{slug}/` (moved here via `git mv` when all stories `[x] Done`)
 
 ### Reference Files
 
@@ -5176,6 +6397,6 @@ When working with task lists, the AI must:
 
 ### Project Info
 
-- PRD and task files live under `internal-docs/feature/YYYY/MM/{slug}/` in the target project
+- PRD and task files live under `internal-docs/feature/todo/{slug}/` in the target project (moved to `internal-docs/feature/archive/YYYY/MM/{slug}/` when complete)
 - All project tool invocations should use the project's standard command wrapper (e.g., `devbox run --` or equivalent)
 - Read the target project's `AGENTS.md` before executing any work in it

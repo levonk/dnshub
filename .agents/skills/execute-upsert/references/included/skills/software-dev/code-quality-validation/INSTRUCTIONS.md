@@ -1543,6 +1543,25 @@ Language-specific detection and configuration scripts for each supported languag
 Security-focused validation scripts for secret detection, dependency auditing, and vulnerability scanning.
 
 
+## Task List
+
+Each item is a checkbox the agent marks as it progresses. Mark `[~]` before
+starting, `[x]` when verified done, `[!]` if blocked.
+
+- [ ] Health check — run `quality-validator.sh health-check` to verify all required tools are installed and on PATH (Troubleshooting)
+- [ ] Linting (Phase 1) — run `quality-validator.sh lint` and confirm all detected languages have their linter run (Phase 1)
+- [ ] Formatting (Phase 2) — run `quality-validator.sh format`, apply auto-fixes via `quality-validator.sh fix`, then re-validate (Phase 2)
+- [ ] Testing (Phase 3) — run `quality-validator.sh test` and confirm unit tests, integration tests, and coverage reporting all ran (Phase 3)
+- [ ] Security (Phase 4) — run `quality-validator.sh security` and confirm dependency scanning, secret detection, and code analysis all ran (Phase 4)
+- [ ] Complete run — run `quality-validator.sh complete` to execute all phases together and confirm the correct environment manager was used (Complete Run)
+- [ ] CI integration (when applicable) — run `quality-validator.sh complete --ci` and generate JSON/JUnit XML reports for the CI system (CI/CD Integration)
+
+**Mark legend:**
+- `[ ]` — task pending (not yet started)
+- `[~]` — task in progress (actively being worked)
+- `[x]` — task done (verified complete)
+- `[!]` — task blocked (cannot proceed; note the blocker inline)
+
 ## Definition of Done
 
 Before declaring the code-quality-validation run complete, verify every item

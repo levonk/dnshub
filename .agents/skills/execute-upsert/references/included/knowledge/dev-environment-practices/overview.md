@@ -140,6 +140,7 @@ Each phase has practices that prevent specific failure modes:
 | Warmup | [Async Prime Internal](async-prime-internal.md) | Cold-cache latency on first command, serial warmup steps that could overlap |
 | Reliability | [Devbox Script Generation Bug](devbox-script-generation-bug.md) | Silent script failures, "command not found" in CI |
 | Fallback | [Devbox Broken Override](devbox-broken-override.md) | Devbox cannot build environment at all (nixpkgs pin missing a package); subagents block instead of using direct package-manager equivalents |
+| Performance | [Wrapper Probe Caching](wrapper-probe-caching.md) | Un-cached per-command probes spawning subprocesses (cli-tool-discovery, rtk rewrite) compound under parallel load into multi-minute hangs |
 | Quality | [Mandatory Testing Workflow](mandatory-testing-workflow.md) | Untested changes, regressions, missing quality gates |
 | Scripts | [Shell Scripting Best Practices](shell-scripting-best-practices.md) | Unsafe shell scripts, missing dry-runs, untested scripts, dirty repo state |
 | Rust Recipes | [Just Recipes for Rust](just-recipes-for-rust.md) | Inconsistent justfile recipes across Rust projects, missing workspace-aware targets |
