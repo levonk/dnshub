@@ -1,19 +1,25 @@
 //! axum server setup and router configuration.
 //!
 //! [`ApiServer`] builds the axum [`Router`] with all PRD section 4.9
-//! endpoints, applies CORS middleware (via `tower-http`), and provides a
+//! endpoints, applies CORS middleware (via `tower-http`), optionally
+//! applies bearer-token auth middleware, optionally serves the NextJS
+//! frontend static files via `tower-http`'s `ServeDir`, and provides a
 //! [`ApiServer::serve`] method to bind the configured listen address.
 //!
 //! The router is also exposed via [`ApiServer::router`] so callers (e.g.
-//! `main.rs` in a future wiring story, or tests) can use it with a custom
-//! test harness or `tower::ServiceExt::oneshot`.
+//! tests) can use it with a custom test harness or
+//! `tower::ServiceExt::oneshot`.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
+use axum::middleware::from_fn_with_state;
 use axum::routing::{get, post};
 use axum::Router;
 use tower_http::cors::{Any, CorsLayer};
+use tower_http::services::ServeDir;
 
+use crate::api::auth::require_token;
 use crate::api::routes::blocklists;
 use crate::api::routes::config as config_routes;
 use crate::api::routes::dhcp;
@@ -26,20 +32,43 @@ pub struct ApiServer {
     router: Router,
 }
 
+/// Options for building the [`ApiServer`] router.
+pub struct ApiServerOptions {
+    /// Optional bearer token for API auth. When `None`, the auth
+    /// middleware is a no-op. When `Some`, requests must include
+    /// `Authorization: Bearer <token>`.
+    pub auth_token: Option<String>,
+    /// Optional filesystem path to the NextJS static export directory.
+    /// When set, the router serves static files from this directory
+    /// for any path not matched by the API routes.
+    pub frontend_static_dir: Option<PathBuf>,
+}
+
 impl ApiServer {
-    /// Build a new [`ApiServer`] with the given [`AppState`].
+    /// Build a new [`ApiServer`] with the given [`AppState`] and default
+    /// options (no auth, no static file serving).
+    pub fn new(state: Arc<AppState>) -> Self {
+        Self::with_options(state, ApiServerOptions {
+            auth_token: None,
+            frontend_static_dir: None,
+        })
+    }
+
+    /// Build a new [`ApiServer`] with the given [`AppState`] and options.
     ///
     /// The router is configured with:
     /// - All `/api/v1/*` endpoints from PRD section 4.9.
     /// - CORS middleware allowing any origin (for frontend development;
-    ///   production restricts via Traefik/Authelia).
-    pub fn new(state: Arc<AppState>) -> Self {
-        let router = Self::build_router(state);
+    ///   production restricts via Traefik).
+    /// - Optional bearer-token auth middleware on all `/api/v1/*` routes.
+    /// - Optional `ServeDir` for serving the NextJS frontend static files.
+    pub fn with_options(state: Arc<AppState>, options: ApiServerOptions) -> Self {
+        let router = Self::build_router(state, options);
         Self { router }
     }
 
     /// Build the axum router with all API routes.
-    fn build_router(state: Arc<AppState>) -> Router {
+    fn build_router(state: Arc<AppState>, options: ApiServerOptions) -> Router {
         // CORS: allow any origin for development. In production the
         // frontend is served from the same origin or behind Traefik.
         let cors = CorsLayer::new()
@@ -99,14 +128,37 @@ impl ApiServer {
             .route("/query-log", get(query_log::get_query_log))
             .route("/query-log/export", get(query_log::export_query_log));
 
-        Router::new()
-            .nest("/api/v1", config_routes)
-            .nest("/api/v1", status_routes)
-            .nest("/api/v1/dhcp", dhcp_routes)
-            .nest("/api/v1/blocklists", blocklist_routes)
-            .nest("/api/v1", query_log_routes)
-            .layer(cors)
-            .with_state(state)
+        // Combine all API routes under /api/v1.
+        let api_routes = Router::new()
+            .merge(config_routes)
+            .merge(status_routes)
+            .nest("/dhcp", dhcp_routes)
+            .nest("/blocklists", blocklist_routes)
+            .merge(query_log_routes);
+
+        // Apply auth middleware to the API routes when a token is configured.
+        // The middleware state is the token String; State<String> extracts it.
+        let api_routes = if let Some(token) = options.auth_token {
+            api_routes.layer(from_fn_with_state(token, require_token))
+        } else {
+            api_routes
+        };
+
+        let router = Router::new()
+            .nest("/api/v1", api_routes)
+            .layer(cors);
+
+        // Optionally serve the NextJS frontend static files. Any path
+        // not matched by /api/v1/* falls through to ServeDir, which
+        // looks up the file in the static directory and returns a 404
+        // if not found.
+        let router = if let Some(static_dir) = options.frontend_static_dir {
+            router.fallback_service(ServeDir::new(static_dir))
+        } else {
+            router
+        };
+
+        router.with_state(state)
     }
 
     /// Returns the configured router (for testing or custom serving).
@@ -175,6 +227,42 @@ mod tests {
             AppState::builder(Arc::new(ConfigStore::new(DnshubConfig::defaults()))).build(),
         );
         let server = ApiServer::new(state);
+        let _router = server.router();
+    }
+
+    #[test]
+    fn server_with_auth_token_builds() {
+        let state = Arc::new(
+            AppState::builder(Arc::new(ConfigStore::new(DnshubConfig::defaults()))).build(),
+        );
+        let server = ApiServer::with_options(state, ApiServerOptions {
+            auth_token: Some("secret-token".to_string()),
+            frontend_static_dir: None,
+        });
+        let _router = server.router();
+    }
+
+    #[test]
+    fn server_with_frontend_static_dir_builds() {
+        let state = Arc::new(
+            AppState::builder(Arc::new(ConfigStore::new(DnshubConfig::defaults()))).build(),
+        );
+        let server = ApiServer::with_options(state, ApiServerOptions {
+            auth_token: None,
+            frontend_static_dir: Some(PathBuf::from("/tmp/nonexistent")),
+        });
+        let _router = server.router();
+    }
+
+    #[test]
+    fn server_with_auth_and_frontend_builds() {
+        let state = Arc::new(
+            AppState::builder(Arc::new(ConfigStore::new(DnshubConfig::defaults()))).build(),
+        );
+        let server = ApiServer::with_options(state, ApiServerOptions {
+            auth_token: Some("secret".to_string()),
+            frontend_static_dir: Some(PathBuf::from("/tmp/frontend")),
+        });
         let _router = server.router();
     }
 }

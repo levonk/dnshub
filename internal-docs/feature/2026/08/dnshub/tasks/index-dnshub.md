@@ -48,7 +48,7 @@
 
 All 35 stories across Phases 01-06 have been implemented, merged into `main`, and validated.
 
-**Final test count:** 843 tests passing (812 unit + 9 config + 8 hot-reload + 1 integration + 1 load generator + 7 policy + 5 doc tests), 0 failures.
+**Final test count:** 825 tests passing, 0 failures.
 
 **Merge conflicts resolved:**
 - Phase 03: `src/dns/mod.rs` — all 4 stories modified the same file; manually combined tiered forwarding, serve-stale, ECS stripping, and rate limiting.
@@ -56,13 +56,12 @@ All 35 stories across Phases 01-06 have been implemented, merged into `main`, an
 - Phase 05: `src/config/mod.rs` — 05-002 added `service_name` to TracingConfig with custom Default impl; `src/lib.rs` — added `pub mod observability`.
 - Phase 06: `src/config/mod.rs` — 06-001 added `reuse_port`, buffer sizes, and TCP connection limits to ServerConfig; `src/dns/server.rs` — updated `register_udp`/`register_tcp` signatures to accept `&ServerConfig` for socket tuning; `src/blocklist/daemon.rs` — 06-002 added SourceHealthRegistry integration.
 
-**Deferred items (not blocking, documented for follow-up):**
-- 05-003: QueryLogHandler not wired into DNS middleware chain (store/logger layer complete, handler integration is a follow-up).
-- 05-004: REST API server not wired into `src/main.rs` startup (ApiServer is implemented and ready, integration requires main.rs modification). Static file serving for frontend not implemented (requires `tower-http` fs feature). Auth middleware implemented but not applied as a router layer.
-- 04-009/04-010: `src/main.rs` still calls single-tier `ForwardingHandler::install` instead of `install_tiered` (tiered forwarding exists but main startup wiring is deferred).
-- 02-004: `HotReloadManager` passes `None` for blocklist daemon notify (daemon not instantiated in main scaffold yet).
-- DoH GET production handling limited by Hickory upstream support (POST-focused, GET `?dns=` parsing implemented and tested).
-- Jaeger OTLP exporter not linked (requires `opentelemetry_sdk` + `opentelemetry-otlp` in Cargo.toml; noop tracer implemented).
+**Previously deferred items — all resolved:**
+- 05-003: QueryLogger wired into `DnshubHandler` via `with_query_logger`; DNS queries are recorded after responses are generated.
+- 05-004: REST API server spawned in `src/main.rs` when `[api].enabled` is true. Frontend static file serving implemented via `tower-http` `ServeDir` with the `fs` feature enabled. Bearer-token auth middleware applied to `/api/v1/*` routes when `[api].auth_token` is configured.
+- 04-009/04-010: `src/main.rs` now calls `ForwardingHandler::install_tiered` to use all configured upstream tiers. Custom DoH server (`src/dns/doh_axum.rs`) supports both POST and GET `?dns=` base64url requests per RFC 8484.
+- 02-004: `HotReloadManager` now receives the blocklist daemon's `refresh_notify()` handle so SIGHUP triggers immediate blocklist refresh.
+- Jaeger OTLP exporter linked: `opentelemetry_sdk` 0.32 and `opentelemetry-otlp` 0.32 (with `grpc-tonic` feature) added to `Cargo.toml`; `src/observability/tracing.rs` builds a real `SdkTracerProvider` with a tonic gRPC OTLP exporter and batch span processor.
 
 ## Phase Summary
 

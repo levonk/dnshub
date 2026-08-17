@@ -29,6 +29,7 @@
 //! queries or [`MiddlewareAction::Continue`] to let the request proceed.
 
 pub mod caching;
+pub mod doh_axum;
 pub mod dot;
 pub mod ecs_strip;
 pub mod forwarding;
@@ -49,6 +50,8 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
+
+use crate::query_log::{QueryLogEntry, QueryLogger};
 
 /// The action returned by a [`DnsMiddleware`] handler.
 #[derive(Debug, Clone)]
@@ -114,6 +117,10 @@ pub struct DnshubHandler {
     /// successful responses populate the stale cache and `SERVFAIL` responses
     /// trigger a stale-cache lookup.
     serve_stale: Option<Arc<serve_stale::ServeStaleHandler>>,
+    /// Optional query logger. When present, every request is recorded
+    /// after the catalog returns, capturing the client IP, domain, query
+    /// type, and response code.
+    query_logger: Option<Arc<QueryLogger>>,
 }
 
 impl DnshubHandler {
@@ -124,12 +131,23 @@ impl DnshubHandler {
             catalog,
             middleware,
             serve_stale: None,
+            query_logger: None,
         }
     }
 
     /// Build a handler with no middleware (forwarding only).
     pub fn from_catalog(catalog: Catalog) -> Self {
         Self::new(catalog, Vec::new())
+    }
+
+    /// Attach a [`QueryLogger`] to record every DNS query after the
+    /// catalog returns. The log entry captures the client IP, queried
+    /// domain, query type, response code, and timestamp. Block/cache/
+    /// tier metadata are not available at this layer and default to
+    /// `false`/`None`.
+    pub fn with_query_logger(mut self, logger: Arc<QueryLogger>) -> Self {
+        self.query_logger = Some(logger);
+        self
     }
 
     /// Append a middleware to the end of the chain.
@@ -225,6 +243,7 @@ impl RequestHandler for DnshubHandler {
                         // available for the catalog path if this send fails.
                         let mut rh = response_handle.clone();
                         if let Ok(info) = rh.send_response(response).await {
+                            self.record_query_log(request, &info);
                             return info;
                         }
                         // If sending the rejection failed, fall through to the
@@ -236,6 +255,7 @@ impl RequestHandler for DnshubHandler {
                         let response = serve_stale::build_message_response(request, message);
                         let mut rh = response_handle.clone();
                         if let Ok(info) = rh.send_response(response).await {
+                            self.record_query_log(request, &info);
                             return info;
                         }
                         // If sending failed, fall through to the catalog.
@@ -262,19 +282,61 @@ impl RequestHandler for DnshubHandler {
             // responses trigger a stale-cache lookup (RFC 8767).
             if let Some(ss) = &self.serve_stale {
                 if ss.is_enabled() {
-                    return self
+                    let info = self
                         .handle_request_with_serve_stale::<R, T>(final_request, response_handle, ss)
                         .await;
+                    self.record_query_log(final_request, &info);
+                    return info;
                 }
             }
 
             // Delegate to the catalog (zone dispatch / forwarding).
-            self.catalog.handle_request::<R, T>(final_request, response_handle).await
+            let info = self.catalog.handle_request::<R, T>(final_request, response_handle).await;
+            self.record_query_log(final_request, &info);
+            info
         })
     }
 }
 
 impl DnshubHandler {
+    /// Record a query log entry for this request/response, if a query
+    /// logger is attached. Failures are logged at `warn` level but do
+    /// not affect the DNS response.
+    fn record_query_log(&self, request: &Request, info: &ResponseInfo) {
+        let Some(logger) = &self.query_logger else {
+            return;
+        };
+
+        // Extract the queried domain and type from the first query.
+        // `request.queries` is a `Queries` wrapper; `.queries()` returns
+        // the inner `&[LowerQuery]` slice.
+        let (domain, qtype) = match request.queries.queries().first() {
+            Some(q) => (q.name().to_string(), q.query_type().to_string()),
+            None => (String::new(), String::new()),
+        };
+
+        let entry = QueryLogEntry {
+            id: None,
+            timestamp: QueryLogEntry::now_millis(),
+            client_ip: request.src().ip().to_string(),
+            client_name: None,
+            profile: None,
+            domain,
+            qtype,
+            response_code: format!("{:?}", info.response_code),
+            blocked: false,
+            block_category: None,
+            block_source: None,
+            tier: None,
+            latency_ms: None,
+            cached: false,
+        };
+
+        if let Err(e) = logger.record_query(entry) {
+            warn!(error = %e, "query log: failed to record entry");
+        }
+    }
+
     /// Handle a request with serve-stale interception.
     ///
     /// The catalog's response is captured (not sent to the client) via a

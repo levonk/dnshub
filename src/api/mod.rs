@@ -50,5 +50,5 @@ pub mod server;
 pub mod state;
 
 pub use error::ApiError;
-pub use server::ApiServer;
+pub use server::{ApiServer, ApiServerOptions};
 pub use state::{AppState, AppStateBuilder};

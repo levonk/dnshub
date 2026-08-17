@@ -1,9 +1,9 @@
 //! Jaeger/OpenTelemetry distributed tracing via `tracing-opentelemetry`.
 //!
 //! This module sets up the OpenTelemetry trace layer that exports spans
-//! to a Jaeger (or OTLP-compatible) collector. Traces are sampled at the
-//! configured `sample_rate` (1-10% recommended) to minimize hot-path
-//! overhead.
+//! to a Jaeger (or OTLP-compatible) collector via the OTLP gRPC protocol.
+//! Traces are sampled at the configured `sample_rate` (1-10% recommended)
+//! to minimize hot-path overhead.
 //!
 //! ## Architecture
 //!
@@ -15,25 +15,14 @@
 //! available to the logging layer but only `sample_rate` fraction are
 //! sent to Jaeger).
 //!
-//! ## Current limitation
-//!
-//! The Jaeger/OTLP exporter requires `opentelemetry_sdk` and an exporter
-//! crate (`opentelemetry-otlp` or `opentelemetry-jaeger`) which are not
-//! yet in `Cargo.toml`. When `tracing.enabled = true`, this module
-//! installs the `tracing-opentelemetry` layer with a noop tracer and
-//! logs a warning. The sampling filter and layer structure are fully
-//! functional — only the actual span export is a no-op until the
-//! exporter crates are added.
-//!
-//! To enable real Jaeger export, add to `Cargo.toml`:
-//! ```toml
-//! opentelemetry_sdk = { version = "0.27", features = ["rt-tokio"] }
-//! opentelemetry-otlp = { version = "0.27", features = ["tonic"] }
-//! ```
-//! Then replace the `noop::NoopTracer` in [`build_otel_layer`] with a
-//! real `SdkTracerProvider` + OTLP exporter.
+//! When `tracing.enabled = true` and `tracing.endpoint` is set, a real
+//! `SdkTracerProvider` with an OTLP gRPC exporter is created and linked
+//! to the `tracing-opentelemetry` layer. Spans matching the sampler are
+//! exported to the configured OTLP collector (Jaeger, Tempo, etc.).
 
 use crate::config::TracingConfig;
+use opentelemetry_otlp::WithExportConfig;
+use opentelemetry_sdk::trace::SdkTracerProvider;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Error returned by tracing initialization.
@@ -137,35 +126,61 @@ pub fn tracing_active(config: &TracingConfig) -> bool {
     config.enabled && !config.endpoint.is_empty()
 }
 
-/// Log a warning if tracing is enabled but the OTLP exporter crate is
-/// not yet linked.
+/// Build a real `SdkTracerProvider` with an OTLP gRPC exporter pointing
+/// at the configured endpoint. The provider is installed as the global
+/// tracer provider and the `tracing-opentelemetry` layer is configured
+/// to use it.
 ///
-/// The noop tracer layer compiles and runs but does not export spans.
-/// When `opentelemetry_sdk` + an exporter crate are added to Cargo.toml,
-/// the real exporter will be used automatically.
-pub fn warn_if_exporter_missing(config: &TracingConfig) {
-    if tracing_active(config) {
-        tracing::warn!(
-            endpoint = %config.endpoint,
-            service_name = %config.service_name,
-            sample_rate = config.sample_rate,
-            "Jaeger tracing enabled — note: OTLP exporter crate not yet linked, \
-             spans will be sampled but not exported until opentelemetry_sdk + \
-             opentelemetry-otlp are added to Cargo.toml"
-        );
-    }
+/// Returns the `SdkTracerProvider` so the caller can hold it for the
+/// lifetime of the process (the provider must outlive all traced spans).
+/// On shutdown, call `provider.shutdown()` to flush pending exports.
+pub fn build_otlp_provider(config: &TracingConfig) -> Result<SdkTracerProvider, TracingInitError> {
+    let exporter = opentelemetry_otlp::SpanExporter::builder()
+        .with_tonic()
+        .with_endpoint(&config.endpoint)
+        .build()
+        .map_err(|e| TracingInitError::Init(format!("failed to build OTLP exporter: {e}")))?;
+
+    let provider = SdkTracerProvider::builder()
+        .with_batch_exporter(exporter)
+        .with_resource(
+            opentelemetry_sdk::Resource::builder()
+                .with_service_name(config.service_name.clone())
+                .build(),
+        )
+        .build();
+
+    // Install as the global provider so tracing-opentelemetry's layer
+    // picks it up.
+    opentelemetry::global::set_tracer_provider(provider.clone());
+
+    tracing::info!(
+        endpoint = %config.endpoint,
+        service_name = %config.service_name,
+        sample_rate = config.sample_rate,
+        "Jaeger OTLP tracer provider installed — spans will be exported"
+    );
+
+    Ok(provider)
 }
 
 /// Initialize the tracing layer.
 ///
 /// This is typically called by [`crate::observability::init_observability`]
 /// rather than directly. When tracing is disabled, this is a no-op.
-pub fn init_tracing(config: &TracingConfig) -> Result<(), TracingInitError> {
+pub fn init_tracing(config: &TracingConfig) -> Result<Option<SdkTracerProvider>, TracingInitError> {
     if !config.enabled {
-        return Ok(());
+        return Ok(None);
     }
-    warn_if_exporter_missing(config);
-    Ok(())
+    if !tracing_active(config) {
+        tracing::warn!(
+            enabled = config.enabled,
+            "tracing enabled but no endpoint configured — spans will not be exported"
+        );
+        return Ok(None);
+    }
+    let provider = build_otlp_provider(config)?;
+    Ok(Some(provider))
 }
 
 #[cfg(test)]
@@ -275,18 +290,19 @@ mod tests {
             sample_rate: 0.05,
             service_name: "dnshub".to_string(),
         };
-        assert!(init_tracing(&config).is_ok());
+        // Disabled → returns Ok(None).
+        assert!(matches!(init_tracing(&config), Ok(None)));
     }
 
     #[test]
-    fn test_init_tracing_enabled_logs_warning() {
+    fn test_init_tracing_enabled_no_endpoint_returns_none() {
         let config = TracingConfig {
             enabled: true,
-            endpoint: "http://jaeger:4317".to_string(),
+            endpoint: String::new(),
             sample_rate: 0.05,
             service_name: "dnshub".to_string(),
         };
-        // Should succeed (just logs a warning about missing exporter crate).
-        assert!(init_tracing(&config).is_ok());
+        // Enabled but no endpoint → Ok(None) with a warning.
+        assert!(matches!(init_tracing(&config), Ok(None)));
     }
 }

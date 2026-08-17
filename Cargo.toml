@@ -50,12 +50,19 @@ metrics = "0.24"
 metrics-exporter-prometheus = "0.18"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
-tracing-opentelemetry = "0.33"  # optional, for Jaeger traces
-opentelemetry = "0.27"          # optional, for Jaeger traces
+tracing-opentelemetry = "0.33"  # Jaeger traces via OpenTelemetry
+opentelemetry = "0.32"          # OpenTelemetry API (matches tracing-opentelemetry 0.33)
+opentelemetry_sdk = "0.32"  # SDK for real span export
+opentelemetry-otlp = { version = "0.32", features = ["grpc-tonic"] }    # OTLP exporter for Jaeger
 
 # HTTP server (for metrics + frontend API + DoH)
 axum = "0.7"
-tower-http = { version = "0.5", features = ["cors"] }
+tower = "0.5"
+tower-http = { version = "0.5", features = ["cors", "fs"] }
+# hyper + hyper-util for custom DoH (TLS + HTTP/2) server with GET support
+hyper = { version = "1", features = ["http2", "server"] }
+hyper-util = { version = "0.1", features = ["server", "http2", "tokio"] }
+bytes = "1"
 
 # TLS (for DoT/DoH server)
 rustls = "0.23"

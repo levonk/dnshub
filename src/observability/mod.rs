@@ -34,8 +34,7 @@ pub mod tracing;
 use crate::config::DnshubConfig;
 use crate::observability::config::ObservabilityConfig;
 use crate::observability::logging::{build_env_filter, is_json_format, LoggingInitError};
-use crate::observability::tracing::{tracing_active, TraceSampler, TracingInitError};
-use ::tracing::warn;
+use crate::observability::tracing::{init_tracing, tracing_active, TraceSampler, TracingInitError};
 use tracing_subscriber::fmt;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -104,15 +103,22 @@ pub fn init_observability(config: &DnshubConfig) -> Result<(), ObservabilityErro
     let use_json = is_json_format(&obs.logging);
     let use_tracing = tracing_active(&obs.tracing);
 
+    // Build the real OTLP tracer provider before installing the subscriber.
+    // The provider must be created before the tracing-opentelemetry layer
+    // is installed so that the layer picks up the global tracer provider.
+    // We leak the provider intentionally — it must outlive all traced spans
+    // for the entire process lifetime. On normal process exit the OS
+    // reclaims the memory; a more sophisticated caller could hold it in
+    // main() and call shutdown() for a clean flush.
     if use_tracing {
-        warn!(
-            endpoint = %obs.tracing.endpoint,
-            service_name = %obs.tracing.service_name,
-            sample_rate = obs.clamped_sample_rate(),
-            "Jaeger tracing enabled — note: OTLP exporter crate not yet linked, \
-             spans will be sampled but not exported until opentelemetry_sdk + \
-             opentelemetry-otlp are added to Cargo.toml"
-        );
+        let provider = init_tracing(&obs.tracing)?;
+        if provider.is_some() {
+            // Hold the provider alive for the process lifetime. The
+            // batch exporter runs on a background Tokio task.
+            // We intentionally leak it — it must not be dropped while
+            // spans are still being recorded.
+            std::mem::forget(provider);
+        }
     }
 
     // Build the subscriber. We use four branches (json/plain × tracing/no-tracing)
@@ -190,8 +196,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_init_observability_with_tracing_enabled() {
+    #[tokio::test]
+    async fn test_init_observability_with_tracing_enabled() {
         let mut config = DnshubConfig::defaults();
         config.tracing = TracingConfig {
             enabled: true,
@@ -200,10 +206,14 @@ mod tests {
             service_name: "dnshub".to_string(),
         };
         let result = init_observability(&config);
-        // Accept either success or "already initialized" error.
+        // The OTLP provider builds lazily (tonic channel doesn't connect
+        // immediately). Accept success, "already initialized" error, or
+        // a tracing init error (if the global tracer provider was already
+        // set by a parallel test).
         match result {
             Ok(()) => {}
             Err(ObservabilityError::Logging(LoggingInitError::Init(_))) => {}
+            Err(ObservabilityError::Tracing(_)) => {}
             Err(e) => panic!("unexpected error: {e}"),
         }
     }

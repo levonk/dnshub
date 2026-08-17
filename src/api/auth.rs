@@ -40,15 +40,19 @@ fn check_token(expected_token: &Option<String>, req: &Request) -> Result<(), Sta
 
 /// Auth middleware: checks the `Authorization: Bearer <token>` header.
 ///
-/// If `expected_token` is `None`, the middleware is a no-op (all requests
-/// pass through). This is the default when the API is behind Traefik/
-/// Authelia.
+/// This middleware is only applied when a token is configured. The
+/// `expected_token` is passed as the `from_fn_with_state` state and
+/// extracted via `axum::extract::State`. When no token is configured,
+/// the middleware layer is not added at all (see [`ApiServer::with_options`]).
+///
+/// Designed for use with `axum::middleware::from_fn_with_state`: the
+/// state is the `String` token, passed as the first argument.
 pub async fn require_token(
-    expected_token: Option<String>,
+    axum::extract::State(expected_token): axum::extract::State<String>,
     req: Request,
     next: Next,
 ) -> Response {
-    match check_token(&expected_token, &req) {
+    match check_token(&Some(expected_token), &req) {
         Ok(()) => next.run(req).await,
         Err(status) => Response::builder()
             .status(status)

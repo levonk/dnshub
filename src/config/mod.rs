@@ -225,6 +225,51 @@ pub struct DnshubConfig {
     /// NextJS frontend (story 05-006).
     #[serde(default)]
     pub frontend: FrontendConfig,
+
+    /// REST API server (story 05-004).
+    #[serde(default)]
+    pub api: ApiConfig,
+}
+
+/// `[api]` — REST API server configuration (story 05-004).
+///
+/// Controls the axum REST API listener, optional bearer-token auth,
+/// and whether the API is enabled at all. When `enabled` is `false`,
+/// the API server is not started.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApiConfig {
+    /// Whether the REST API server is enabled.
+    #[serde(default = "default_api_enabled")]
+    pub enabled: bool,
+
+    /// Bind address for the REST API (e.g. `"0.0.0.0:8080"`).
+    #[serde(default = "default_api_listen")]
+    pub listen: String,
+
+    /// Optional bearer token for API authentication. When `None`, the
+    /// auth middleware is a no-op (suitable for behind-Traefik/Authelia
+    /// deployments). When set, requests must include
+    /// `Authorization: Bearer <token>`.
+    #[serde(default)]
+    pub auth_token: Option<String>,
+}
+
+impl Default for ApiConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_api_enabled(),
+            listen: default_api_listen(),
+            auth_token: None,
+        }
+    }
+}
+
+fn default_api_enabled() -> bool {
+    true
+}
+
+fn default_api_listen() -> String {
+    "0.0.0.0:8080".to_string()
 }
 
 /// `[server]` — DNS listener configuration.
