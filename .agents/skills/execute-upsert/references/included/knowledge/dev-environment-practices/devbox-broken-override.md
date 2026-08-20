@@ -22,17 +22,19 @@ sources:
 
 Devbox fails to activate or build the environment on a specific platform —
 typically because a nixpkgs pin references a package that no longer builds on
-that architecture (e.g., the `jujitsu` package missing from the nixpkgs pin on
-Intel Macs). The failure is **platform-specific**: devbox works on other
-machines, so the project's `devbox.json` is not wrong, but on the affected
-machine every `devbox run --` command fails.
+that architecture (e.g., the `jujutsu` package missing from the nixpkgs pin on
+Intel Macs — though the original incident that inspired this concept was
+actually a typo in devbox.json, not a real nixpkgs absence). The failure is
+**platform-specific**: devbox works on other machines, so the project's
+`devbox.json` is not wrong, but on the affected machine every `devbox run --`
+command fails.
 
 ### Symptoms
 
 ```bash
 $ devbox run -- just build
 # Error: failed to build devbox environment
-# Error: package 'jujitsu' not found in nixpkgs pin
+# Error: package 'jujutsu' not found in nixpkgs pin
 ```
 
 Every `devbox run -- <cmd>` fails with the same root cause. The project's

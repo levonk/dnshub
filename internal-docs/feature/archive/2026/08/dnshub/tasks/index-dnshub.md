@@ -48,7 +48,7 @@
 
 All 35 stories across Phases 01-06 have been implemented, merged into `main`, and validated.
 
-**Final test count:** 825 tests passing, 0 failures.
+**Final test count:** 856 tests passing, 0 failures (825 unit + 9 config + 8 hot-reload + 1 integration + 1 load-generator + 7 policy + 5 doc-tests). Verified 2026-08-16 via `cargo test` on `main` (commit `e97df68`).
 
 **Merge conflicts resolved:**
 - Phase 03: `src/dns/mod.rs` — all 4 stories modified the same file; manually combined tiered forwarding, serve-stale, ECS stripping, and rate limiting.

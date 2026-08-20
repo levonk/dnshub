@@ -107,7 +107,7 @@
       "source": "levonk/skills-releases",
       "sourceType": "github",
       "skillPath": "skills/execution/execute-upsert/SKILL.md",
-      "computedHash": "7170afd5bcc794ea8b21259323eb1b5e9fe8c79b7ac104380305e5492a4170ac"
+      "computedHash": "75ad2e6ed4bef4d29e776dbed0b63afcd6c041bcaedc6ca41bec9c09286d9dfa"
     },
     "git-repository-management": {
       "source": "levonk/skills-releases",

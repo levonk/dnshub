@@ -1648,6 +1648,24 @@ declare -A PROJECT_TYPES=(
 - **Project Configuration Skill** - Add compatible preferences without overwriting
 
 
+## Task List
+
+Each item is a checkbox the agent marks as it progresses. Mark `[~]` before
+starting, `[x]` when verified done, `[!]` if blocked.
+
+- [ ] Detect build systems and package managers via `scripts/detect-build-systems.sh`
+- [ ] Detect CI/CD platforms via `scripts/detect-ci-cd-systems.sh`
+- [ ] Detect workspace/monorepo configurations via `scripts/detect-workspace-configs.sh`
+- [ ] Run `scripts/detect-all-systems.sh` to aggregate all detection results
+- [ ] Extract build targets from existing configuration files via `scripts/extract-build-targets.sh generate`
+- [ ] Produce analysis output (human-readable and/or JSON) via `scripts/analyze-project-structure.sh` or `scripts/export-detection-results.sh`
+
+**Mark legend:**
+- `[ ]` — task pending (not yet started)
+- `[~]` — task in progress (actively being worked)
+- `[x]` — task done (verified complete)
+- `[!]` — task blocked (cannot proceed; note the blocker inline)
+
 ## Definition of Done
 
 Before declaring the project-detection run complete, verify every item below.

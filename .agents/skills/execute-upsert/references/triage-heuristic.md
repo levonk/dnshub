@@ -64,3 +64,14 @@ briefly summarize your assessment:
 
 > "This request warrants the full pipeline because it [reasons]. I'll start
 > by creating/locating the PRD."
+
+## Anti-Rationalization
+
+| Rationalization | Reality |
+|---|---|
+| "This is simple, I do not need the pipeline" | Simple tasks do not need the full pipeline, but they still need acceptance criteria. If the heuristic says large, run the pipeline. |
+| "I can hold the plan in my head" | Context windows are finite. Written plans survive session boundaries and compaction. |
+| "The user knows what they want" | Even clear requests have implicit assumptions. The PRD surfaces those assumptions before code. |
+| "Planning is overhead" | Planning is the task. Implementation without a plan is just typing. A 15-minute PRD prevents hours of rework. |
+| "Requirements will change anyway" | That is why the PRD is a living document. An outdated PRD is still better than no PRD. |
+| "I'll just fix this one thing" | If it touches 3+ files or spans modules, it is not "one thing." The heuristic catches scope creep the agent does not self-detect. |

@@ -8,7 +8,7 @@ project. This covers both PRD/task files and project-level documentation.
 
 ### PRD Updates
 
-Update the PRD file (`internal-docs/feature/YYYY/MM/{slug}/feat-*.md`) to
+Update the PRD file (`internal-docs/feature/todo/{slug}/feat-*.md`) to
 reflect what was actually built:
 
 - **Status section**: Add or update a "Status" or "Implementation Status"
@@ -25,7 +25,7 @@ reflect what was actually built:
 ### Task Index Updates
 
 Update the task index file
-(`internal-docs/feature/YYYY/MM/{slug}/tasks/index-[PRD-NAME].md`):
+(`internal-docs/feature/todo/{slug}/tasks/index-[PRD-NAME].md`):
 
 - All stories should be `[x] Done` or explicitly marked as deferred/blocked.
 - For deferred/blocked stories, add a "Reason" column or note explaining why.
@@ -34,7 +34,7 @@ Update the task index file
 ### Per-Story File Updates
 
 For each story file
-(`internal-docs/feature/YYYY/MM/{slug}/tasks/tasks-[PRD-NAME]-*-*.md`):
+(`internal-docs/feature/todo/{slug}/tasks/tasks-[PRD-NAME]-*-*.md`):
 
 - Ensure the "Relevant Files" section lists ALL files created or modified.
 - Ensure all acceptance criteria are checked `[x]`.
@@ -102,3 +102,26 @@ git add . && git commit -m "docs: update documentation for [PRD-NAME]" \
 
 If the project uses a different commit convention (check `AGENTS.md`), follow
 that convention instead.
+
+## 4. Archive Completed Feature
+
+After all documentation is committed, if **all** stories are `[x] Done` (no
+deferred/blocked stories), archive the feature per the `work-lifecycle`
+include. Move the feature directory from `todo/` to `archive/YYYY/MM/`:
+
+```bash
+# Derive YYYY/MM from the PRD filename's embedded timestamp
+PRD_FILE="feat-YYYYMMDDHHmm-{slug}.md"
+YEAR="${PRD_FILE:5:4}"
+MONTH="${PRD_FILE:9:2}"
+
+git mv "internal-docs/feature/todo/{slug}" "internal-docs/feature/archive/${YEAR}/${MONTH}/{slug}"
+git commit -m "docs(feature): archive completed feature {slug}" \
+          -m "All stories verified [x] Done and DoD checks pass. Moved from todo/ to archive/${YEAR}/${MONTH}/." \
+          -m "#project-{PROJECT} #module-feature #type-docs #skill-execute-upsert-archived #skill-grm-created"
+```
+
+Set `date.completed` in the PRD frontmatter to the current date before
+committing the archive move. If any stories are `[!] Blocked` (deferred), do
+NOT archive — leave the feature in `todo/` with the deferred items noted in
+the PRD's "Deferred Items" section.
